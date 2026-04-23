@@ -1,0 +1,37 @@
+{
+  "name": "server-pickpack-3",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.8.1",
+    "bcrypt": "^5.1.1",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "crypto-js": "^4.1.1",
+    "dotenv": "^16.3.1",
+    "exceljs": "^4.4.0",
+    "express": "^4.18.2",
+    "express-fileupload": "^1.5.1",
+    "express-rate-limit": "^7.0.1",
+    "express-session": "^1.17.3",
+    "express-validator": "^7.0.1",
+    "fs": "^0.0.1-security",
+    "gulp": "^5.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.14.3",
+    "nodemailer": "^6.9.15",
+    "nodemon": "^3.0.1",
+    "path": "^0.12.7",
+    "sequelize": "^6.33.0",
+    "session": "^0.1.0",
+    "xlsx": "^0.18.5"
+  }
+}

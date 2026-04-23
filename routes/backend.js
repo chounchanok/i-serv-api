@@ -6,6 +6,7 @@ const xlsx = require('xlsx');
 const router = express.Router();
 const validate = require('../utilities/validate');
 const { authenticateJWT } = require('../middleware/admin');
+const TaskController = require('../Controllers-backend/TaskController');
 
 
 // สร้าง Directory สำหรับเก็บไฟล์ชั่วคราว ถ้ายังไม่มี
@@ -799,6 +800,7 @@ router.post('/renew_product_week', AdminController.renew_product_week);
 // router.delete('/category/:id', validate('id'), authenticateJWT, CategoryController.delete);
 // router.post('/category/:id/status', validate('id'), authenticateJWT, CategoryController.status);
 
-
+router.post('/admin/tasks', auth, TaskController.createTask);
+router.get('/admin/tasks', auth, TaskController.getAdminTasks);
 
 module.exports = router;

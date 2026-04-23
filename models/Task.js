@@ -1,15 +1,14 @@
-module.exports = (sequelize, DataTypes) => {
-  const Task = sequelize.define('Task', {
-    name: DataTypes.STRING,
-    report_type: DataTypes.STRING,
-    priority: DataTypes.INTEGER, // 1, 2, 3
-    start_date: DataTypes.DATEONLY,
-    end_date: DataTypes.DATEONLY,
-    description: DataTypes.TEXT,
-    target_brands: DataTypes.JSON, // เก็บเป็น Array ['Brand A']
-    target_stores: DataTypes.JSON  // เก็บเป็น Array ['Store A1']
-  }, {
-    tableName: 'tasks'
-  });
-  return Task;
+// models/Task.js (ตัวอย่างโครงสร้างที่ควรมี)
+module.exports = (sequelize, Sequelize) => {
+    const Task = sequelize.define("tasks", {
+        name: { type: Sequelize.STRING },
+        report_type: { type: Sequelize.STRING },
+        priority: { type: Sequelize.INTEGER },
+        start_date: { type: Sequelize.DATEONLY },
+        end_date: { type: Sequelize.DATEONLY },
+        description: { type: Sequelize.TEXT },
+        target_brands: { type: Sequelize.JSON }, // เก็บเป็น Array
+        target_stores: { type: Sequelize.JSON }  // เก็บเป็น Array
+    });
+    return Task;
 };

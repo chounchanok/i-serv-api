@@ -800,7 +800,13 @@ router.post('/renew_product_week', AdminController.renew_product_week);
 // router.delete('/category/:id', validate('id'), authenticateJWT, CategoryController.delete);
 // router.post('/category/:id/status', validate('id'), authenticateJWT, CategoryController.status);
 
-router.post('/admin/tasks', auth, TaskController.createTask);
-router.get('/admin/tasks', auth, TaskController.getAdminTasks);
+router.post('/admin/tasks', authenticateJWT, TaskController.createTask);
+router.get('/admin/tasks', authenticateJWT, TaskController.getAdminTasks);
+
+router.get("/employee/my-tasks", authenticateJWT, TaskController.getEmployeeTasks);
+router.post("/employee/tasks/:id/submit", authenticateJWT, TaskController.submitTask);
+
+router.get("/admin/team-summary", authenticateJWT, TaskController.getTeamSummary);
+router.get("/admin/employee-tasks/:userId", authenticateJWT, TaskController.getEmployeeTaskDetails);
 
 module.exports = router;

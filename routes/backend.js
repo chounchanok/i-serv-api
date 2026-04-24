@@ -299,6 +299,7 @@ router.put('/update_account/:id', AccountController.update_account);
 router.put('/update_account_isActive/:id', AccountController.update_account_isActive);
 router.post('/get_all_account_filter', AccountController.get_all_account_filter);
 router.post('/get_all_account_filter_user', AccountController.get_all_account_filter_user);
+router.post('/get_account_by_user_position', AccountController.get_account_by_user_position);
 
 //account_type
 router.post('/create_account_type', AccountTypeController.create_account_type);
@@ -800,13 +801,13 @@ router.post('/renew_product_week', AdminController.renew_product_week);
 // router.delete('/category/:id', validate('id'), authenticateJWT, CategoryController.delete);
 // router.post('/category/:id/status', validate('id'), authenticateJWT, CategoryController.status);
 
-router.post('/admin/tasks', authenticateJWT, TaskController.createTask);
-router.get('/admin/tasks', authenticateJWT, TaskController.getAdminTasks);
+router.post('/admin/tasks', TaskController.createTask);
+router.get('/admin/tasks', TaskController.getAdminTasks);
 
-router.get("/employee/my-tasks", authenticateJWT, TaskController.getEmployeeTasks);
-router.post("/employee/tasks/:id/submit", authenticateJWT, TaskController.submitTask);
+router.get("/employee/my-tasks/:userId", TaskController.getEmployeeTasks);
+router.post("/employee/tasks/:id/submit", TaskController.submitTask);
 
-router.get("/admin/team-summary", authenticateJWT, TaskController.getTeamSummary);
-router.get("/admin/employee-tasks/:userId", authenticateJWT, TaskController.getEmployeeTaskDetails);
+router.get("/admin/team-summary", TaskController.getTeamSummary);
+router.get("/admin/employee-tasks/:userId", TaskController.getEmployeeTaskDetails);
 
 module.exports = router;

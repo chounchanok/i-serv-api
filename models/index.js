@@ -48,6 +48,22 @@ Object.keys(db).forEach(modelName => {
   }
 });
 
+// 🌟 ส่วนที่แก้ใหม่: เช็คชื่อโมเดลให้ตรงกับที่ประกาศไว้ในไฟล์ .define() 🌟
+
+// 1. ความสัมพันธ์ระหว่างตารางงาน (tasks) และ การแจกจ่ายงาน (TaskAssignment)
+if (db.tasks && db.TaskAssignment) {
+    db.tasks.hasMany(db.TaskAssignment, { foreignKey: 'task_id', as: 'assignments' });
+    db.TaskAssignment.belongsTo(db.tasks, { foreignKey: 'task_id', as: 'task_detail' });
+}
+
+// 2. ความสัมพันธ์ระหว่างพนักงาน (User) และ การแจกจ่ายงาน
+// (ทำเผื่อไว้ 2 ชื่อเลย กันพลาดว่า User โหลดมาเป็นชื่ออะไร)
+const UserModel = db.User || db.users; 
+if (UserModel && db.TaskAssignment) {
+    UserModel.hasMany(db.TaskAssignment, { foreignKey: 'user_id', as: 'assignments' });
+    db.TaskAssignment.belongsTo(UserModel, { foreignKey: 'user_id', as: 'user' });
+}
+
 db.sequelize = sequelize;
 db.Sequelize = Sequelize;
 

@@ -1,11 +1,18 @@
 const db = require("../models");
-const Task = db.tasks;
-const TaskAssignment = db.task_assignments;
-const User = db.users;
+
+// ลองแก้ให้ตรงกับชื่อ Model ที่คุณประกาศไว้ในไฟล์ models/index.js 
+// โดยปกติโปรเจกต์คุณจะใช้เป็นตัวพิมพ์ใหญ่ครับ
+const Task = db.Task || db.tasks; 
+const TaskAssignment = db.TaskAssignment || db.task_assignments;
+const User = db.User; // ✅ แก้เป็น db.User
+
 const { Op } = require("sequelize");
 
 exports.createTask = async (req, res) => {
     try {
+        const targetGroups = req.body.targetGroups || [];
+        const targetAccounts = req.body.targetAccounts || [];
+
         // 1. บันทึกงานหลักลงตาราง tasks
         const task = await Task.create({
             name: req.body.name,
@@ -14,19 +21,53 @@ exports.createTask = async (req, res) => {
             start_date: req.body.startDate,
             end_date: req.body.endDate,
             description: req.body.description,
-            target_brands: req.body.targetBrands,
-            target_stores: req.body.targetStores
+            // ใช้ Column เดิมเก็บ ID ของ Group และ Account ไปก่อนได้ครับ
+            target_brands: targetGroups, 
+            target_stores: targetAccounts 
         });
 
-        // 2. หาพนักงานที่ต้องได้รับงานนี้ (Logic เดียวกับใน React)
+        // 2. หาพนักงานที่ต้องได้รับงานนี้
         let userCondition = {};
-        if (req.body.targetStores && req.body.targetStores.length > 0) {
-            userCondition.store_name = { [Op.in]: req.body.targetStores };
-        } else if (req.body.targetBrands && req.body.targetBrands.length > 0) {
-            userCondition.brand_name = { [Op.in]: req.body.targetBrands };
+
+        if (targetAccounts.length > 0) {
+            // กรณีเลือก Account: หาพนักงานที่ดูแล Store ภายใต้ Account เหล่านี้
+            const query = `
+                SELECT DISTINCT mus.user_id 
+                FROM tb_map_user_store_list mus
+                INNER JOIN tb_store s ON mus.store_id = s.id
+                WHERE s.account_id IN (:targetAccounts) 
+                AND mus.isActive = 'Y'
+            `;
+            
+            const mappedUsers = await db.sequelize.query(query, {
+                replacements: { targetAccounts: targetAccounts },
+                type: db.Sequelize.QueryTypes.SELECT
+            });
+            
+            const userIds = mappedUsers.map(u => u.user_id);
+            
+            // ตรวจสอบว่ามีพนักงานใน Account นี้ไหม
+            if (userIds.length > 0) {
+                userCondition.id = { [Op.in]: userIds };
+            } else {
+                userCondition.id = 0; // บังคับเงื่อนไขให้เป็นเท็จ (ไม่แจกงานใครเพราะไม่มีคน)
+            }
+
+        } else if (targetGroups.length > 0) {
+            // กรณีเลือกแค่ GroupCustomer อย่างเดียว: ดึงพนักงานทุกคนใน Group
+            userCondition.group_customer_id = { [Op.in]: targetGroups };
+        } else {
+            // กรณีไม่ได้เลือกอะไรเลย (กันเหนียว)
+            userCondition.id = 0; 
         }
 
-        const employees = await User.findAll({ where: userCondition });
+        // ดึงพนักงานที่มีสิทธิ์รับงานนี้ทั้งหมด
+        const employees = await User.findAll({ 
+            where: {
+                ...userCondition,
+                isActive: 'Y' // แจกงานให้เฉพาะคนที่สถานะยัง Active
+            } 
+        });
 
         // 3. กระจายงาน (Bulk Insert ลง task_assignments)
         if (employees.length > 0) {
@@ -40,6 +81,7 @@ exports.createTask = async (req, res) => {
 
         res.status(201).send({ message: "สร้างงานและมอบหมายสำเร็จ", data: task });
     } catch (err) {
+        console.error("CREATE TASK ERROR:", err);
         res.status(500).send({ message: err.message });
     }
 };
@@ -58,12 +100,18 @@ exports.getAdminTasks = async (req, res) => {
 // 1. ดึงรายการงานทั้งหมดของพนักงานที่ Login อยู่
 exports.getEmployeeTasks = async (req, res) => {
     try {
-        const userId = req.userId; // สมมติว่าได้จาก middleware auth.js
+        // 🌟 เปลี่ยนจาก req.query.userId เป็น req.params.userId
+        const userId = (req.user && req.user.id) ? req.user.id : req.params.userId;
+
+        if (!userId) {
+            return res.status(400).send({ message: "ไม่พบข้อมูล User ID ไม่สามารถดึงงานได้" });
+        }
+
         const data = await TaskAssignment.findAll({
             where: { user_id: userId },
             include: [{
                 model: Task,
-                as: 'task_detail' // ต้องตั้ง alias ใน models/index.js
+                as: 'task_detail' 
             }],
             order: [[{ model: Task, as: 'task_detail' }, 'priority', 'ASC']]
         });
@@ -77,12 +125,17 @@ exports.getEmployeeTasks = async (req, res) => {
 exports.submitTask = async (req, res) => {
     try {
         const assignmentId = req.params.id;
-        const userId = req.userId;
+        // กรณีส่งงานใช้ req.body.userId เผื่อไว้ถ้า Bypass Token
+        const userId = (req.user && req.user.id) ? req.user.id : req.body.userId;
+
+        if (!userId) {
+            return res.status(400).send({ message: "ไม่พบข้อมูล User ID" });
+        }
 
         const result = await TaskAssignment.update(
             { 
                 status: 'submitted',
-                submitted_at: db.sequelize.fn('NOW') 
+                submitted_at: new Date() // ใช้ new Date() ของ JavaScript ปลอดภัยกว่า db.sequelize.fn('NOW') ในบาง Database
             },
             { where: { id: assignmentId, user_id: userId } }
         );
@@ -97,28 +150,45 @@ exports.submitTask = async (req, res) => {
     }
 };
 
-// API สำหรับหน้าภาพรวมทีม (หน้ากราฟ)
 exports.getTeamSummary = async (req, res) => {
     try {
-        const { store } = req.query; // รับค่า Filter จาก Select Box หน้าบ้าน
-        
-        let userCondition = {};
-        if (store && store !== 'all') {
-            userCondition.store_name = store;
+        // ดึงสิทธิ์จาก Token (หาก Bypass JWT ให้รับผ่าน Query แทน)
+        const positionName = req.user?.position_name || req.query.position_name;
+        const groupCustomerId = req.user?.group_customer_id || req.query.group_customer_id;
+        const userId = req.user?.id || req.query.userId;
+
+        let userCondition = { isActive: 'Y' };
+
+        // --- เริ่มการกรองตามสิทธิ์ (Position Logic) ---
+        if (positionName !== 'SuperAdmin') {
+            if (groupCustomerId) {
+                userCondition.group_customer_id = groupCustomerId;
+            }
+
+            if (positionName === 'Supervisor') {
+                const currentUser = await User.findByPk(userId);
+                if (currentUser) {
+                    userCondition.area_supervisor = currentUser.area_supervisor;
+                    userCondition.area_manager = currentUser.area_manager;
+                }
+            }
         }
 
-        // 1. ดึงพนักงานพร้อมงานที่ได้รับมอบหมาย
+        // ❌ เอาการกรองด้วย store_name ออกไปก่อน เพราะใน User ไม่มี column นี้
+        // const { store } = req.query;
+        // if (store && store !== 'all') { ... }
+
         const employees = await User.findAll({
             where: userCondition,
-            attributes: ['id', 'name', 'store_name', 'position'],
+            // 🌟 แก้ไข attributes: ดึงเฉพาะคอลัมน์ที่มีอยู่ในตาราง users จริงๆ
+            attributes: ['id', 'name', 'last_name'], 
             include: [{
                 model: TaskAssignment,
-                as: 'assignments', // ชื่อที่ตั้งไว้ใน models/index.js
+                as: 'assignments',
                 attributes: ['status']
             }]
         });
 
-        // 2. คำนวณสรุปผล (Logic ตาม TeamOverviewPage.tsx)
         const summaries = employees.map(emp => {
             const tasks = emp.assignments || [];
             const total = tasks.length;
@@ -129,9 +199,8 @@ exports.getTeamSummary = async (req, res) => {
             return {
                 employee: {
                     id: emp.id,
-                    name: emp.name,
-                    store: emp.store_name,
-                    position: emp.position
+                    name: `${emp.name} ${emp.last_name || ''}`.trim(),
+                    store: 'ไม่ระบุ' // ปล่อยเป็น ไม่ระบุ ไปก่อน เพื่อไม่ให้ API พัง
                 },
                 total,
                 submitted,
@@ -140,12 +209,9 @@ exports.getTeamSummary = async (req, res) => {
             };
         });
 
-        // 3. คำนวณสถิติรวมของทีม (เพื่อแสดงใน Card)
         const totalEmp = summaries.length;
         const fullySubmitted = summaries.filter(s => s.pct === 100).length;
-        const avgPct = totalEmp > 0 
-            ? Math.round(summaries.reduce((a, s) => a + s.pct, 0) / totalEmp) 
-            : 0;
+        const avgPct = totalEmp > 0 ? Math.round(summaries.reduce((a, s) => a + s.pct, 0) / totalEmp) : 0;
 
         res.status(200).send({
             summaries,
@@ -153,6 +219,7 @@ exports.getTeamSummary = async (req, res) => {
         });
 
     } catch (err) {
+        console.error("TEAM SUMMARY ERROR:", err);
         res.status(500).send({ message: err.message });
     }
 };

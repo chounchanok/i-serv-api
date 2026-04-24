@@ -256,6 +256,97 @@ async function update_account_isActive(req, res) {
     }
 }
 
+
+
+async function get_account_by_user_position(req, res) {
+    try {
+        let storeIdsArray = [];
+        const db = require('../models');
+        const { Op } = require("sequelize");
+
+        // 1. ตรวจสอบสิทธิ์ว่าไม่ใช่ SuperAdmin
+        if (req.body.position_name !== 'SuperAdmin') {
+            if (req.body.position_name === 'Supervisor' || req.body.position_name === 'Admin' || req.body.position_name === 'Management') {
+                const UserData = await db.User.findOne({ where: { id: req.body.user_id } });
+                if (!UserData) return res.status(404).json({ status: "error", message: "User not found" });
+
+                const storeIdsString = await db.MapUserStorelist.findAll({
+                    where: { group_customer_id: UserData.group_customer_id },
+                    raw: true,
+                });
+
+                // หาพนักงานทั้งหมดที่อยู่ใต้ Supervisor คนนี้
+                const usersUnderSup = await db.User.findAll({
+                    where: {
+                        area_supervisor: UserData.area_supervisor,
+                        area_manager: UserData.area_manager,
+                    },
+                    attributes: ['id'],
+                    raw: true
+                });
+                const userIds = usersUnderSup.map(u => u.id);
+
+                storeIdsArray = storeIdsString
+                    .filter(record => userIds.includes(record.user_id))
+                    .map(record => parseInt(record.store_id, 10))
+                    .filter(id => !isNaN(id));
+
+            } else {
+                // สำหรับ 'พนักงาน' หรือ Role อื่นๆ
+                const mapUserStoresx = await db.MapUserStore.findOne({
+                    where: { user_id: req.body.user_id },
+                });
+                if (mapUserStoresx && mapUserStoresx.store_id) {
+                    storeIdsArray = mapUserStoresx.store_id.split(',').map(id => parseInt(id, 10)).filter(id => !isNaN(id));
+                }
+            }
+        } else {
+            // กรณีเป็น SuperAdmin (ดึงทั้งหมด หรือกรองตาม group ที่เลือก)
+            const storeIdsString = await db.MapUserStorelist.findAll({
+                where: req.body.group_customer_id ? { group_customer_id: req.body.group_customer_id } : {},
+                attributes: ['store_id'],
+                raw: true
+            });
+            storeIdsArray = storeIdsString.map(store => parseInt(store.store_id, 10)).filter(id => !isNaN(id));
+        }
+
+        // 2. ถ้าไม่มี Store ผูกไว้เลย ส่ง Array ว่างกลับ
+        if (storeIdsArray.length === 0) {
+            return res.send({ status: "success", data: [], stores: [] });
+        }
+
+        // 3. ไปหา Account_id จาก Store ที่หาได้
+        const stores = await db.Store.findAll({
+            where: { id: { [Op.in]: storeIdsArray } }
+        });
+
+        // ใช้ Set เพื่อกรอง account_id ไม่ให้ซ้ำกัน
+        const accountIdsArray = [...new Set(stores.map(store => store.account_id).filter(id => id))];
+
+        if (accountIdsArray.length === 0) {
+            return res.send({ status: "success", data: [], stores: stores });
+        }
+
+        // 4. ดึงข้อมูลตาราง Account ของจริง
+        let data = await db.Account.findAll({
+            where: { id: { [Op.in]: accountIdsArray } }
+        });
+
+        // 5. แปลงโครงสร้างให้ตรงกับที่ Frontend คาดหวัง
+        const formattedData = data.map(acc => ({
+            account_id: acc.id,
+            account: { name: acc.name },
+            group_customer_id: acc.group_customer_id
+        }));
+
+        res.send({ status: "success", data: formattedData, stores: stores });
+    } catch (err) {
+        console.error("Account Filter Error:", err);
+        res.status(500).send({ status: "error", message: err.message || "ไม่สามารถแสดงข้อมูลได้ในตอนนี้!" });
+    }
+}
+
+
 module.exports = {
 
     //exprot function
@@ -266,6 +357,7 @@ module.exports = {
     get_account_by_id,
     update_account,
     update_account_isActive,
+    get_account_by_user_position,
 
 
 
@@ -366,4 +458,4 @@ module.exports = {
         }
     },
 
-}
+};

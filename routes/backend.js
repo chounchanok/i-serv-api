@@ -803,6 +803,8 @@ router.post('/renew_product_week', AdminController.renew_product_week);
 
 router.post('/admin/tasks', TaskController.createTask);
 router.get('/admin/tasks', TaskController.getAdminTasks);
+router.put('/admin/tasks/:id', TaskController.updateTask);
+router.delete('/admin/tasks/:id', TaskController.deleteTask);
 
 router.get("/employee/my-tasks/:userId", TaskController.getEmployeeTasks);
 router.post("/employee/tasks/:id/submit", TaskController.submitTask);

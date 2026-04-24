@@ -265,8 +265,8 @@ async function get_account_by_user_position(req, res) {
         const { Op } = require("sequelize");
 
         // 1. ตรวจสอบสิทธิ์ว่าไม่ใช่ SuperAdmin
-        if (req.body.position_name !== 'SuperAdmin') {
-            if (req.body.position_name === 'Supervisor' || req.body.position_name === 'Admin' || req.body.position_name === 'Management') {
+        if (req.body.position_name !== 'SuperAdmin' && req.body.position_name !== 'Admin') {
+            if (req.body.position_name === 'Supervisor' || req.body.position_name === 'Management') {
                 const UserData = await db.User.findOne({ where: { id: req.body.user_id } });
                 if (!UserData) return res.status(404).json({ status: "error", message: "User not found" });
 

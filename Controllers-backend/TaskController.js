@@ -150,6 +150,97 @@ exports.submitTask = async (req, res) => {
     }
 };
 
+// --- ฟังก์ชันอัปเดต/แก้ไขงาน ---
+exports.updateTask = async (req, res) => {
+    try {
+        const taskId = req.params.id;
+        const { name, reportType, priority, startDate, endDate, description, targetGroups, targetAccounts } = req.body;
+        
+        const task = await Task.findByPk(taskId);
+        if (!task) return res.status(404).send({ message: "ไม่พบข้อมูลงานนี้ในระบบ" });
+
+        // 1. อัปเดตรายละเอียดงานหลัก
+        await task.update({
+            name,
+            report_type: reportType,
+            priority,
+            start_date: startDate,
+            end_date: endDate,
+            description,
+            target_brands: targetGroups,
+            target_stores: targetAccounts
+        });
+
+        // 2. ลบ Assignment เดิมเฉพาะที่ยัง "ไม่ได้ส่ง" (pending) ทิ้ง
+        // เพื่อล้างกระดานและแจกจ่ายใหม่ (ส่วนที่ส่งแล้วจะยังคงอยู่)
+        await TaskAssignment.destroy({ 
+            where: { task_id: taskId, status: 'pending' } 
+        });
+
+        // 3. คำนวณหาพนักงานเป้าหมายใหม่ (Logic เดียวกับตอน Create)
+        let userCondition = {};
+        if (targetAccounts && targetAccounts.length > 0) {
+            const query = `
+                SELECT DISTINCT mus.user_id 
+                FROM tb_map_user_store_list mus
+                INNER JOIN tb_store s ON mus.store_id = s.id
+                WHERE s.account_id IN (:targetAccounts) 
+                AND mus.isActive = 'Y'
+            `;
+            const mappedUsers = await db.sequelize.query(query, {
+                replacements: { targetAccounts: targetAccounts },
+                type: db.Sequelize.QueryTypes.SELECT
+            });
+            const userIds = mappedUsers.map(u => u.user_id);
+            if (userIds.length > 0) {
+                userCondition.id = { [Op.in]: userIds };
+            } else {
+                userCondition.id = 0; 
+            }
+        } else if (targetGroups && targetGroups.length > 0) {
+            userCondition.group_customer_id = { [Op.in]: targetGroups };
+        } else {
+            userCondition.id = 0; 
+        }
+
+        const employees = await User.findAll({ 
+            where: { ...userCondition, isActive: 'Y' } 
+        });
+
+        // 4. แจกจ่ายงานให้พนักงานตามเงื่อนไขใหม่
+        if (employees.length > 0) {
+            const assignments = employees.map(emp => ({
+                task_id: task.id,
+                user_id: emp.id,
+                status: 'pending'
+            }));
+            await TaskAssignment.bulkCreate(assignments);
+        }
+
+        res.status(200).send({ message: "อัปเดตงานและแจกจ่ายใหม่สำเร็จ", data: task });
+    } catch (err) {
+        console.error("UPDATE TASK ERROR:", err);
+        res.status(500).send({ message: err.message });
+    }
+};
+
+// --- ฟังก์ชันลบงาน ---
+exports.deleteTask = async (req, res) => {
+    try {
+        const taskId = req.params.id;
+        
+        // ลบ Assignment ที่เชื่อมโยงอยู่ทั้งหมดก่อน
+        await TaskAssignment.destroy({ where: { task_id: taskId } });
+        // ลบตัวงานหลัก
+        await Task.destroy({ where: { id: taskId } });
+        
+        res.status(200).send({ message: "ลบงานสำเร็จ" });
+    } catch (err) {
+        console.error("DELETE TASK ERROR:", err);
+        res.status(500).send({ message: err.message });
+    }
+};
+
 exports.getTeamSummary = async (req, res) => {
     try {
         // ดึงสิทธิ์จาก Token (หาก Bypass JWT ให้รับผ่าน Query แทน)

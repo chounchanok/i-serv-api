@@ -1,19 +1,29 @@
 const db = require("../models");
-
-// ลองแก้ให้ตรงกับชื่อ Model ที่คุณประกาศไว้ในไฟล์ models/index.js 
-// โดยปกติโปรเจกต์คุณจะใช้เป็นตัวพิมพ์ใหญ่ครับ
 const Task = db.Task || db.tasks; 
 const TaskAssignment = db.TaskAssignment || db.task_assignments;
-const User = db.User; // ✅ แก้เป็น db.User
-
+const User = db.User; 
 const { Op } = require("sequelize");
+
+// 🌟 ฟังก์ชันช่วยคำนวณแยกวันที่ ให้ออกมาเป็น Array (เช่น ['2026-04-24', '2026-04-25', ...])
+const getDatesInRange = (startDate, endDate) => {
+    const dates = [];
+    let curr = new Date(startDate);
+    const end = new Date(endDate);
+    while (curr <= end) {
+        const yyyy = curr.getFullYear();
+        const mm = String(curr.getMonth() + 1).padStart(2, '0');
+        const dd = String(curr.getDate()).padStart(2, '0');
+        dates.push(`${yyyy}-${mm}-${dd}`);
+        curr.setDate(curr.getDate() + 1);
+    }
+    return dates;
+};
 
 exports.createTask = async (req, res) => {
     try {
         const targetGroups = req.body.targetGroups || [];
         const targetAccounts = req.body.targetAccounts || [];
 
-        // 1. บันทึกงานหลักลงตาราง tasks
         const task = await Task.create({
             name: req.body.name,
             report_type: req.body.reportType,
@@ -21,165 +31,12 @@ exports.createTask = async (req, res) => {
             start_date: req.body.startDate,
             end_date: req.body.endDate,
             description: req.body.description,
-            // ใช้ Column เดิมเก็บ ID ของ Group และ Account ไปก่อนได้ครับ
             target_brands: targetGroups, 
             target_stores: targetAccounts 
         });
 
-        // 2. หาพนักงานที่ต้องได้รับงานนี้
         let userCondition = {};
-
         if (targetAccounts.length > 0) {
-            // กรณีเลือก Account: หาพนักงานที่ดูแล Store ภายใต้ Account เหล่านี้
-            const query = `
-                SELECT DISTINCT mus.user_id 
-                FROM tb_map_user_store_list mus
-                INNER JOIN tb_store s ON mus.store_id = s.id
-                WHERE s.account_id IN (:targetAccounts) 
-                AND mus.isActive = 'Y'
-            `;
-            
-            const mappedUsers = await db.sequelize.query(query, {
-                replacements: { targetAccounts: targetAccounts },
-                type: db.Sequelize.QueryTypes.SELECT
-            });
-            
-            const userIds = mappedUsers.map(u => u.user_id);
-            
-            // ตรวจสอบว่ามีพนักงานใน Account นี้ไหม
-            if (userIds.length > 0) {
-                userCondition.id = { [Op.in]: userIds };
-            } else {
-                userCondition.id = 0; // บังคับเงื่อนไขให้เป็นเท็จ (ไม่แจกงานใครเพราะไม่มีคน)
-            }
-
-        } else if (targetGroups.length > 0) {
-            // กรณีเลือกแค่ GroupCustomer อย่างเดียว: ดึงพนักงานทุกคนใน Group
-            userCondition.group_customer_id = { [Op.in]: targetGroups };
-        } else {
-            // กรณีไม่ได้เลือกอะไรเลย (กันเหนียว)
-            userCondition.id = 0; 
-        }
-
-        // ดึงพนักงานที่มีสิทธิ์รับงานนี้ทั้งหมด
-        const employees = await User.findAll({ 
-            where: {
-                ...userCondition,
-                isActive: 'Y' // แจกงานให้เฉพาะคนที่สถานะยัง Active
-            } 
-        });
-
-        // 3. กระจายงาน (Bulk Insert ลง task_assignments)
-        if (employees.length > 0) {
-            const assignments = employees.map(emp => ({
-                task_id: task.id,
-                user_id: emp.id,
-                status: 'pending'
-            }));
-            await TaskAssignment.bulkCreate(assignments);
-        }
-
-        res.status(201).send({ message: "สร้างงานและมอบหมายสำเร็จ", data: task });
-    } catch (err) {
-        console.error("CREATE TASK ERROR:", err);
-        res.status(500).send({ message: err.message });
-    }
-};
-
-exports.getAdminTasks = async (req, res) => {
-    try {
-        const data = await Task.findAll({
-            order: [['start_date', 'DESC']]
-        });
-        res.send(data);
-    } catch (err) {
-        res.status(500).send({ message: err.message });
-    }
-};
-
-// 1. ดึงรายการงานทั้งหมดของพนักงานที่ Login อยู่
-exports.getEmployeeTasks = async (req, res) => {
-    try {
-        // 🌟 เปลี่ยนจาก req.query.userId เป็น req.params.userId
-        const userId = (req.user && req.user.id) ? req.user.id : req.params.userId;
-
-        if (!userId) {
-            return res.status(400).send({ message: "ไม่พบข้อมูล User ID ไม่สามารถดึงงานได้" });
-        }
-
-        const data = await TaskAssignment.findAll({
-            where: { user_id: userId },
-            include: [{
-                model: Task,
-                as: 'task_detail' 
-            }],
-            order: [[{ model: Task, as: 'task_detail' }, 'priority', 'ASC']]
-        });
-        res.status(200).send(data);
-    } catch (err) {
-        res.status(500).send({ message: err.message });
-    }
-};
-
-// 2. กดส่งงาน (Update Status)
-exports.submitTask = async (req, res) => {
-    try {
-        const assignmentId = req.params.id;
-        // กรณีส่งงานใช้ req.body.userId เผื่อไว้ถ้า Bypass Token
-        const userId = (req.user && req.user.id) ? req.user.id : req.body.userId;
-
-        if (!userId) {
-            return res.status(400).send({ message: "ไม่พบข้อมูล User ID" });
-        }
-
-        const result = await TaskAssignment.update(
-            { 
-                status: 'submitted',
-                submitted_at: new Date() // ใช้ new Date() ของ JavaScript ปลอดภัยกว่า db.sequelize.fn('NOW') ในบาง Database
-            },
-            { where: { id: assignmentId, user_id: userId } }
-        );
-
-        if (result[0] === 1) {
-            res.status(200).send({ message: "ส่งงานเรียบร้อยแล้ว" });
-        } else {
-            res.status(404).send({ message: "ไม่พบข้อมูลงานหรือคุณไม่มีสิทธิ์ส่งงานนี้" });
-        }
-    } catch (err) {
-        res.status(500).send({ message: err.message });
-    }
-};
-
-// --- ฟังก์ชันอัปเดต/แก้ไขงาน ---
-exports.updateTask = async (req, res) => {
-    try {
-        const taskId = req.params.id;
-        const { name, reportType, priority, startDate, endDate, description, targetGroups, targetAccounts } = req.body;
-        
-        const task = await Task.findByPk(taskId);
-        if (!task) return res.status(404).send({ message: "ไม่พบข้อมูลงานนี้ในระบบ" });
-
-        // 1. อัปเดตรายละเอียดงานหลัก
-        await task.update({
-            name,
-            report_type: reportType,
-            priority,
-            start_date: startDate,
-            end_date: endDate,
-            description,
-            target_brands: targetGroups,
-            target_stores: targetAccounts
-        });
-
-        // 2. ลบ Assignment เดิมเฉพาะที่ยัง "ไม่ได้ส่ง" (pending) ทิ้ง
-        // เพื่อล้างกระดานและแจกจ่ายใหม่ (ส่วนที่ส่งแล้วจะยังคงอยู่)
-        await TaskAssignment.destroy({ 
-            where: { task_id: taskId, status: 'pending' } 
-        });
-
-        // 3. คำนวณหาพนักงานเป้าหมายใหม่ (Logic เดียวกับตอน Create)
-        let userCondition = {};
-        if (targetAccounts && targetAccounts.length > 0) {
             const query = `
                 SELECT DISTINCT mus.user_id 
                 FROM tb_map_user_store_list mus
@@ -197,7 +54,7 @@ exports.updateTask = async (req, res) => {
             } else {
                 userCondition.id = 0; 
             }
-        } else if (targetGroups && targetGroups.length > 0) {
+        } else if (targetGroups.length > 0) {
             userCondition.group_customer_id = { [Op.in]: targetGroups };
         } else {
             userCondition.id = 0; 
@@ -207,55 +64,152 @@ exports.updateTask = async (req, res) => {
             where: { ...userCondition, isActive: 'Y' } 
         });
 
-        // 4. แจกจ่ายงานให้พนักงานตามเงื่อนไขใหม่
+        // 🌟 แยกสร้าง Assignment แบบวันต่อวัน
         if (employees.length > 0) {
-            const assignments = employees.map(emp => ({
-                task_id: task.id,
-                user_id: emp.id,
-                status: 'pending'
-            }));
+            const dates = getDatesInRange(req.body.startDate, req.body.endDate);
+            const assignments = [];
+            
+            employees.forEach(emp => {
+                dates.forEach(date => {
+                    assignments.push({
+                        task_id: task.id,
+                        user_id: emp.id,
+                        task_date: date, // บันทึกว่าเป็นงานของวันไหน
+                        status: 'pending'
+                    });
+                });
+            });
             await TaskAssignment.bulkCreate(assignments);
         }
 
-        res.status(200).send({ message: "อัปเดตงานและแจกจ่ายใหม่สำเร็จ", data: task });
+        res.status(201).send({ message: "สร้างงานและมอบหมายสำเร็จ", data: task });
     } catch (err) {
-        console.error("UPDATE TASK ERROR:", err);
+        console.error("CREATE TASK ERROR:", err);
         res.status(500).send({ message: err.message });
     }
 };
 
-// --- ฟังก์ชันลบงาน ---
+exports.updateTask = async (req, res) => {
+    try {
+        const taskId = req.params.id;
+        const { name, reportType, priority, startDate, endDate, description, targetGroups, targetAccounts } = req.body;
+        
+        const task = await Task.findByPk(taskId);
+        if (!task) return res.status(404).send({ message: "ไม่พบข้อมูลงานนี้ในระบบ" });
+
+        await task.update({
+            name, report_type: reportType, priority, start_date: startDate, end_date: endDate,
+            description, target_brands: targetGroups, target_stores: targetAccounts
+        });
+
+        // ลบของเดิมที่ยังรอส่งทิ้งให้หมด
+        await TaskAssignment.destroy({ 
+            where: { task_id: taskId, status: 'pending' } 
+        });
+
+        let userCondition = {};
+        if (targetAccounts && targetAccounts.length > 0) {
+            const query = `SELECT DISTINCT mus.user_id FROM tb_map_user_store_list mus INNER JOIN tb_store s ON mus.store_id = s.id WHERE s.account_id IN (:targetAccounts) AND mus.isActive = 'Y'`;
+            const mappedUsers = await db.sequelize.query(query, { replacements: { targetAccounts }, type: db.Sequelize.QueryTypes.SELECT });
+            const userIds = mappedUsers.map(u => u.user_id);
+            userCondition.id = userIds.length > 0 ? { [Op.in]: userIds } : 0;
+        } else if (targetGroups && targetGroups.length > 0) {
+            userCondition.group_customer_id = { [Op.in]: targetGroups };
+        } else {
+            userCondition.id = 0; 
+        }
+
+        const employees = await User.findAll({ where: { ...userCondition, isActive: 'Y' } });
+
+        // 🌟 แจกจ่ายใหม่แบบวันต่อวัน
+        if (employees.length > 0) {
+            const dates = getDatesInRange(startDate, endDate);
+            const assignments = [];
+            employees.forEach(emp => {
+                dates.forEach(date => {
+                    assignments.push({
+                        task_id: task.id, user_id: emp.id, task_date: date, status: 'pending'
+                    });
+                });
+            });
+            await TaskAssignment.bulkCreate(assignments);
+        }
+
+        res.status(200).send({ message: "อัปเดตงานสำเร็จ", data: task });
+    } catch (err) {
+        res.status(500).send({ message: err.message });
+    }
+};
+
 exports.deleteTask = async (req, res) => {
     try {
         const taskId = req.params.id;
-        
-        // ลบ Assignment ที่เชื่อมโยงอยู่ทั้งหมดก่อน
         await TaskAssignment.destroy({ where: { task_id: taskId } });
-        // ลบตัวงานหลัก
         await Task.destroy({ where: { id: taskId } });
-        
         res.status(200).send({ message: "ลบงานสำเร็จ" });
     } catch (err) {
-        console.error("DELETE TASK ERROR:", err);
+        res.status(500).send({ message: err.message });
+    }
+};
+
+exports.getAdminTasks = async (req, res) => {
+    try {
+        const data = await Task.findAll({ order: [['start_date', 'DESC']] });
+        res.send(data);
+    } catch (err) {
+        res.status(500).send({ message: err.message });
+    }
+};
+
+exports.getEmployeeTasks = async (req, res) => {
+    try {
+        const userId = (req.user && req.user.id) ? req.user.id : req.params.userId;
+        if (!userId) return res.status(400).send({ message: "ไม่พบข้อมูล User ID" });
+
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        const data = await TaskAssignment.findAll({
+            where: { 
+                user_id: userId,
+                // 🌟 ดึงงานตั้งแต่วันนี้เป็นต้นไป (ไม่ดึงอดีต) โดยอิงจาก task_date 🌟
+                task_date: { [Op.gte]: todayStr }
+            },
+            include: [{ model: Task, as: 'task_detail' }],
+            order: [['task_date', 'ASC'], [{ model: Task, as: 'task_detail' }, 'priority', 'ASC']]
+        });
+        res.status(200).send(data);
+    } catch (err) {
+        res.status(500).send({ message: err.message });
+    }
+};
+
+exports.submitTask = async (req, res) => {
+    try {
+        const assignmentId = req.params.id;
+        const userId = (req.user && req.user.id) ? req.user.id : req.body.userId;
+        if (!userId) return res.status(400).send({ message: "ไม่พบข้อมูล User ID" });
+
+        const result = await TaskAssignment.update(
+            { status: 'submitted', submitted_at: new Date() },
+            { where: { id: assignmentId, user_id: userId } }
+        );
+
+        if (result[0] === 1) res.status(200).send({ message: "ส่งงานเรียบร้อยแล้ว" });
+        else res.status(404).send({ message: "ไม่พบข้อมูลงาน" });
+    } catch (err) {
         res.status(500).send({ message: err.message });
     }
 };
 
 exports.getTeamSummary = async (req, res) => {
     try {
-        // ดึงสิทธิ์จาก Token (หาก Bypass JWT ให้รับผ่าน Query แทน)
         const positionName = req.user?.position_name || req.query.position_name;
         const groupCustomerId = req.user?.group_customer_id || req.query.group_customer_id;
         const userId = req.user?.id || req.query.userId;
 
         let userCondition = { isActive: 'Y' };
-
-        // --- เริ่มการกรองตามสิทธิ์ (Position Logic) ---
         if (positionName !== 'SuperAdmin') {
-            if (groupCustomerId) {
-                userCondition.group_customer_id = groupCustomerId;
-            }
-
+            if (groupCustomerId) userCondition.group_customer_id = groupCustomerId;
             if (positionName === 'Supervisor') {
                 const currentUser = await User.findByPk(userId);
                 if (currentUser) {
@@ -265,17 +219,17 @@ exports.getTeamSummary = async (req, res) => {
             }
         }
 
-        // ❌ เอาการกรองด้วย store_name ออกไปก่อน เพราะใน User ไม่มี column นี้
-        // const { store } = req.query;
-        // if (store && store !== 'all') { ... }
+        const todayStr = new Date().toISOString().split('T')[0];
 
         const employees = await User.findAll({
             where: userCondition,
-            // 🌟 แก้ไข attributes: ดึงเฉพาะคอลัมน์ที่มีอยู่ในตาราง users จริงๆ
             attributes: ['id', 'name', 'last_name'], 
             include: [{
                 model: TaskAssignment,
                 as: 'assignments',
+                // 🌟 กรองเอาเฉพาะสถิติงานของ "วันนี้" เท่านั้น 🌟
+                where: { task_date: todayStr },
+                required: false, // ยังคงแสดงพนักงานแม้จะไม่มีงานในวันนี้
                 attributes: ['status']
             }]
         });
@@ -284,19 +238,14 @@ exports.getTeamSummary = async (req, res) => {
             const tasks = emp.assignments || [];
             const total = tasks.length;
             const submitted = tasks.filter(t => t.status === 'submitted').length;
-            const pending = total - submitted;
             const pct = total > 0 ? Math.round((submitted / total) * 100) : 0;
-
             return {
                 employee: {
                     id: emp.id,
                     name: `${emp.name} ${emp.last_name || ''}`.trim(),
-                    store: 'ไม่ระบุ' // ปล่อยเป็น ไม่ระบุ ไปก่อน เพื่อไม่ให้ API พัง
+                    store: 'ไม่ระบุ' 
                 },
-                total,
-                submitted,
-                pending,
-                pct
+                total, submitted, pending: total - submitted, pct
             };
         });
 
@@ -304,13 +253,8 @@ exports.getTeamSummary = async (req, res) => {
         const fullySubmitted = summaries.filter(s => s.pct === 100).length;
         const avgPct = totalEmp > 0 ? Math.round(summaries.reduce((a, s) => a + s.pct, 0) / totalEmp) : 0;
 
-        res.status(200).send({
-            summaries,
-            stats: { totalEmp, fullySubmitted, avgPct }
-        });
-
+        res.status(200).send({ summaries, stats: { totalEmp, fullySubmitted, avgPct } });
     } catch (err) {
-        console.error("TEAM SUMMARY ERROR:", err);
         res.status(500).send({ message: err.message });
     }
 };
@@ -318,12 +262,12 @@ exports.getTeamSummary = async (req, res) => {
 exports.getEmployeeTaskDetails = async (req, res) => {
     try {
         const userId = req.params.userId;
+        const todayStr = new Date().toISOString().split('T')[0];
+
         const assignments = await TaskAssignment.findAll({
-            where: { user_id: userId },
-            include: [{
-                model: Task,
-                as: 'task_detail'
-            }],
+            // 🌟 ดึงรายการมาโชว์ใน Modal เฉพาะของวันนี้ 🌟
+            where: { user_id: userId, task_date: todayStr },
+            include: [{ model: Task, as: 'task_detail' }],
             order: [['createdAt', 'DESC']]
         });
         res.status(200).send(assignments);

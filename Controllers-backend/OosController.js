@@ -6,6 +6,10 @@ const Op = db.Sequelize.Op
 const path = require('path');
 const fs = require('fs');
 
+// 🌟 ดึง Model Task และ TaskAssignment มาใช้งานในไฟล์นี้ด้วย
+const Task = db.Task || db.tasks; 
+const TaskAssignment = db.TaskAssignment || db.task_assignments;
+
 // function create Oos
 async function create_Oos(req, res) {
     const error = validation(req);
@@ -64,6 +68,8 @@ async function create_oos2(req, res) {
         });
 
         var status = '';
+        var oos_check = '';
+        var stock_check = '';
 
         let data;
         if (count == 0) {
@@ -100,14 +106,13 @@ async function create_oos2(req, res) {
             });
 
             if (existingOos) {
-
                 await db.OosList.destroy({
                     where: {
                         oos_id: existingOos.id
                     }
                 });
                 
-                for (const product of req.body.testform2) {         
+                for (const product of req.body.testform2) {        
                     await db.OosList.create({
                         oos_id: existingOos.id,
                         map_product_store_list_id: product.map_product_store_list_id,
@@ -117,11 +122,12 @@ async function create_oos2(req, res) {
                         qty: product.qty || 0,
                         note: product.note || '',
                     });
-                    var status = 'Create Again';
                 }
+                var status = 'Create Again';
             }
         }
 
+        // --- โค้ดดึง data ปกติที่ Query ออกมาโชว์ ---
         data = await db.Oos.findOne({
             where: whereConditions2,
             order: [['id', 'DESC']],
@@ -167,6 +173,52 @@ async function create_oos2(req, res) {
                 data: data,
                 specificDisabledDates: specificDisabledDates
             });
+
+            // =================================================================
+            // 🌟 ส่วนที่เพิ่มใหม่: อัปเดต TaskAssignment สำหรับ OOS และ Stock (โดยใช้ข้อมูลจาก Frontend) 🌟
+            // =================================================================
+            try {
+                if (req.body.reportTypesToSubmit && Array.isArray(req.body.reportTypesToSubmit)) {
+                    // หาวันที่ปัจจุบันเพื่อเช็คว่าเป็นงานของวันนี้
+                    const getTodayStr = () => {
+                        const d = new Date();
+                        const tzOffset = d.getTimezoneOffset() * 60000;
+                        return new Date(d.getTime() - tzOffset).toISOString().split('T')[0];
+                    };
+                    const todayStr = getTodayStr();
+
+                    // วนลูปอัปเดตสถานะของ Task ที่ตรงกับชื่อ report_type
+                    for (const reportType of req.body.reportTypesToSubmit) {
+                        const pendingAssignment = await TaskAssignment.findOne({
+                            where: {
+                                user_id: req.body.user_id,
+                                task_date: todayStr,
+                                status: 'pending'
+                            },
+                            include: [{
+                                model: Task,
+                                as: 'task_detail',
+                                where: {
+                                    report_type: reportType // 'OOS' หรือ 'Stock'
+                                }
+                            }]
+                        });
+
+                        // ถ้าเจอ ให้ทำการ Stamp เวลา
+                        if (pendingAssignment) {
+                            await pendingAssignment.update({
+                                status: 'submitted',
+                                submitted_at: new Date()
+                            });
+                            console.log(`Auto-submitted TaskAssignment ID: ${pendingAssignment.id} for report type: ${reportType}`);
+                        }
+                    }
+                }
+            } catch (taskErr) {
+                console.error("Error auto-submitting task assignment:", taskErr);
+            }
+            // =================================================================
+
         } else {
             res.send({ status: "error", message: "ไม่สามารถพบข้อมูล!", where: whereConditions, count: count });
         }

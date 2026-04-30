@@ -6,6 +6,10 @@ const Op = db.Sequelize.Op
 const path = require('path');
 const fs = require('fs');
 
+// 🌟 ดึง Model Task และ TaskAssignment มาใช้งานในไฟล์นี้ด้วย
+const Task = db.Task || db.tasks; 
+const TaskAssignment = db.TaskAssignment || db.task_assignments;
+
 async function create_Week(req, res) {
     const error = validation(req);
     if (error) {
@@ -149,6 +153,49 @@ async function create_Week2(req, res) {
                 data: data,
                 specificDisabledDates: specificDisabledDates
             });
+
+            // =================================================================
+            // 🌟 ส่วนที่เพิ่มใหม่: อัปเดต TaskAssignment อัตโนมัติ (ถ้ามี) 🌟
+            // =================================================================
+            try {
+                // หาวันที่ปัจจุบันเพื่อเช็คว่าเป็นงานของวันนี้
+                const getTodayStr = () => {
+                    const d = new Date();
+                    const tzOffset = d.getTimezoneOffset() * 60000;
+                    return new Date(d.getTime() - tzOffset).toISOString().split('T')[0];
+                };
+                const todayStr = getTodayStr();
+
+                // 1. ค้นหาว่าพนักงานคนนี้ มีงาน OOS ของวันนี้ที่ยังไม่ได้ส่งหรือไม่
+                const pendingAssignment = await TaskAssignment.findOne({
+                    where: {
+                        user_id: req.body.user_id,
+                        task_date: todayStr,
+                        status: 'pending'
+                    },
+                    include: [{
+                        model: Task,
+                        as: 'task_detail',
+                        where: {
+                            report_type: '12 Weeks' // 🌟 เปลี่ยนชื่อให้ตรงกับเมนู (เช่น 'Offtake', 'Stock')
+                        }
+                    }]
+                });
+
+                // 2. ถ้าเจอ ให้ทำการ Stamp เวลาและเปลี่ยนสถานะ
+                if (pendingAssignment) {
+                    await pendingAssignment.update({
+                        status: 'submitted',
+                        submitted_at: new Date()
+                    });
+                    console.log(`Auto-submitted TaskAssignment ID: ${pendingAssignment.id} for user: ${req.body.user_id}`);
+                }
+            } catch (taskErr) {
+                // ดัก Error ไว้ เพื่อไม่ให้การบันทึกรายงานพัง หากระบบ Task มีปัญหา
+                console.error("Error auto-submitting task assignment:", taskErr);
+            }
+            // =================================================================
+
         }else{
             res.send({ status: "error", message: "ไม่สามารถพบข้อมูล!",where: whereConditions,count: count });
         }

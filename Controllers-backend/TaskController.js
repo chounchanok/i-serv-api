@@ -4,6 +4,8 @@ const TaskAssignment = db.TaskAssignment || db.task_assignments;
 const User = db.User; 
 const { Op } = require("sequelize");
 
+// At the top of TaskController.js - add Account to your imports
+
 // 🌟 ฟังก์ชันช่วยคำนวณแยกวันที่ ให้ออกมาเป็น Array (เช่น ['2026-04-24', '2026-04-25', ...])
 const getDatesInRange = (startDate, endDate) => {
     const dates = [];
@@ -166,18 +168,49 @@ exports.getEmployeeTasks = async (req, res) => {
         const userId = (req.user && req.user.id) ? req.user.id : req.params.userId;
         if (!userId) return res.status(400).send({ message: "ไม่พบข้อมูล User ID" });
 
-        const todayStr = new Date().toISOString().split('T')[0];
+        // 🌟 แก้ไข Timezone ให้เป็นเวลาประเทศไทย (UTC+7) 🌟
+        const d = new Date();
+        const localDate = new Date(d.getTime() + (7 * 60 * 60 * 1000));
+        const todayStr = localDate.toISOString().split('T')[0];
 
+        // 1. ดึงข้อมูลงานตามปกติ
         const data = await TaskAssignment.findAll({
             where: { 
                 user_id: userId,
-                // 🌟 ดึงงานตั้งแต่วันนี้เป็นต้นไป (ไม่ดึงอดีต) โดยอิงจาก task_date 🌟
+                // ดึงงานตั้งแต่วันนี้เป็นต้นไป (ไม่ดึงอดีต) โดยอิงจาก task_date
                 task_date: { [Op.gte]: todayStr }
             },
             include: [{ model: Task, as: 'task_detail' }],
             order: [['task_date', 'ASC'], [{ model: Task, as: 'task_detail' }, 'priority', 'ASC']]
         });
-        res.status(200).send(data);
+
+        // 2. ดึงชื่อ Account (Store) ของพนักงานคนนี้ ด้วย Raw Query
+        const mappingQuery = `
+            SELECT DISTINCT a.name as account_name
+            FROM tb_map_user_store_list mus
+            INNER JOIN tb_store s ON mus.store_id = s.id
+            INNER JOIN tb_account a ON s.account_id = a.id
+            WHERE mus.user_id = :userId
+            AND mus.isActive = 'Y'
+        `;
+        const mappings = await db.sequelize.query(mappingQuery, {
+            replacements: { userId: userId },
+            type: db.Sequelize.QueryTypes.SELECT
+        });
+
+        // 3. จับรวมชื่อ Account (เผื่อในกรณีที่พนักงาน 1 คนรับผิดชอบหลายร้าน)
+        const accountName = mappings.length > 0 
+            ? mappings.map(m => m.account_name).join(', ') 
+            : 'ไม่ระบุ';
+
+        // 4. แปลงข้อมูลและแนบ Account.name เข้าไปในทุกๆ งาน
+        const responseData = data.map(item => {
+            const taskObj = item.toJSON(); // แปลง Sequelize Object เป็น JSON ธรรมดาเพื่อเพิ่มคีย์ได้
+            taskObj.account_name = accountName; // 👈 แนบชื่อ Account กลับไปให้ Frontend
+            return taskObj;
+        });
+
+        res.status(200).send(responseData);
     } catch (err) {
         res.status(500).send({ message: err.message });
     }
@@ -206,6 +239,7 @@ exports.getTeamSummary = async (req, res) => {
         const positionName = req.user?.position_name || req.query.position_name;
         const groupCustomerId = req.user?.group_customer_id || req.query.group_customer_id;
         const userId = req.user?.id || req.query.userId;
+        const accountName = req.query.account_name;
 
         let userCondition = { isActive: 'Y' };
         if (positionName !== 'SuperAdmin') {
@@ -219,42 +253,97 @@ exports.getTeamSummary = async (req, res) => {
             }
         }
 
-        const todayStr = new Date().toISOString().split('T')[0];
+        // ปรับ Timezone เป็นของไทย (UTC+7)
+        const d = new Date();
+        const localDate = new Date(d.getTime() + (7 * 60 * 60 * 1000));
+        const todayStr = localDate.toISOString().split('T')[0];
 
+        // 🌟 1. ดึงข้อมูล User (เอา account_id ออกจาก attributes เพราะมันไม่มีในตารางนี้)
         const employees = await User.findAll({
             where: userCondition,
-            attributes: ['id', 'name', 'last_name'], 
-            include: [{
-                model: TaskAssignment,
-                as: 'assignments',
-                // 🌟 กรองเอาเฉพาะสถิติงานของ "วันนี้" เท่านั้น 🌟
-                where: { task_date: todayStr },
-                required: false, // ยังคงแสดงพนักงานแม้จะไม่มีงานในวันนี้
-                attributes: ['status']
-            }]
+            attributes: ['id', 'name', 'last_name'], // 👈 ลบ account_id ออก
+            include: [
+                {
+                    model: TaskAssignment,
+                    as: 'assignments',
+                    where: { task_date: todayStr },
+                    required: false,
+                    attributes: ['status'],
+                    include: [ // 👈 เพิ่ม Include ตรงนี้เพื่อดึงชื่องาน
+                        {
+                            model: Task,
+                            as: 'task_detail',
+                            attributes: ['name']
+                        }
+                    ]
+                }
+            ]
         });
 
-        const summaries = employees.map(emp => {
+        // 🌟 2. ดึงชื่อ Account (Store) ของ User แต่ละคนด้วย Raw Query ตามโครงสร้าง DB จริง
+        const userIds = employees.map(emp => emp.id);
+        const userAccountMap = {};
+
+        if (userIds.length > 0) {
+            const mappingQuery = `
+                SELECT mus.user_id, a.name as account_name
+                FROM tb_map_user_store_list mus
+                INNER JOIN tb_store s ON mus.store_id = s.id
+                INNER JOIN tb_account a ON s.account_id = a.id
+                WHERE mus.user_id IN (:userIds)
+                AND mus.isActive = 'Y'
+            `;
+            const mappings = await db.sequelize.query(mappingQuery, {
+                replacements: { userIds: userIds },
+                type: db.Sequelize.QueryTypes.SELECT
+            });
+
+            // จับคู่ user_id -> account_name
+            mappings.forEach(m => {
+                userAccountMap[m.user_id] = m.account_name;
+            });
+        }
+
+        // 🌟 3. กรองพนักงาน (ถ้ามีการส่ง account_name จาก Dropdown มา)
+        let filteredEmployees = employees;
+        if (accountName) {
+            filteredEmployees = employees.filter(emp => userAccountMap[emp.id] === accountName);
+        }
+
+        // 🌟 4. สร้างข้อมูลสรุปส่งกลับไปที่ Frontend (แก้ไขเพิ่มรายการงาน)
+        const summaries = filteredEmployees.map(emp => {
             const tasks = emp.assignments || [];
+            
+            // 👈 แยกรายชื่องานที่ส่งแล้ว และยังไม่ส่ง (เอาเฉพาะชื่อมาต่อกันด้วยลูกน้ำ)
+            const submittedTasks = tasks
+                .filter(t => t.status === 'submitted')
+                .map(t => t.task_detail?.name || 'ไม่ระบุชื่อ')
+                .join(', '); // กลายเป็น String เช่น "เช็คสต๊อก, ถ่ายรูปหน้าร้าน"
+                
+            const pendingTasks = tasks
+                .filter(t => t.status !== 'submitted')
+                .map(t => t.task_detail?.name || 'ไม่ระบุชื่อ')
+                .join(', ');
+
             const total = tasks.length;
             const submitted = tasks.filter(t => t.status === 'submitted').length;
             const pct = total > 0 ? Math.round((submitted / total) * 100) : 0;
+            
             return {
                 employee: {
                     id: emp.id,
                     name: `${emp.name} ${emp.last_name || ''}`.trim(),
-                    store: 'ไม่ระบุ' 
+                    store: userAccountMap[emp.id] || 'ไม่ระบุ' 
                 },
-                total, submitted, pending: total - submitted, pct
+                total, submitted, pending: total - submitted, pct,
+                submittedList: submittedTasks || '-', // 👈 ส่งข้อมูลกลับไป
+                pendingList: pendingTasks || '-'      // 👈 ส่งข้อมูลกลับไป
             };
         });
 
-        const totalEmp = summaries.length;
-        const fullySubmitted = summaries.filter(s => s.pct === 100).length;
-        const avgPct = totalEmp > 0 ? Math.round(summaries.reduce((a, s) => a + s.pct, 0) / totalEmp) : 0;
-
-        res.status(200).send({ summaries, stats: { totalEmp, fullySubmitted, avgPct } });
+        res.status(200).send({ summaries });
     } catch (err) {
+        console.error("TEAM SUMMARY ERROR:", err);
         res.status(500).send({ message: err.message });
     }
 };
@@ -262,10 +351,14 @@ exports.getTeamSummary = async (req, res) => {
 exports.getEmployeeTaskDetails = async (req, res) => {
     try {
         const userId = req.params.userId;
-        const todayStr = new Date().toISOString().split('T')[0];
+        
+        // 🌟 แก้ไข Timezone ให้เป็นเวลาประเทศไทย (UTC+7) 🌟
+        const d = new Date();
+        const localDate = new Date(d.getTime() + (7 * 60 * 60 * 1000));
+        const todayStr = localDate.toISOString().split('T')[0];
 
         const assignments = await TaskAssignment.findAll({
-            // 🌟 ดึงรายการมาโชว์ใน Modal เฉพาะของวันนี้ 🌟
+            // ดึงรายการมาโชว์ใน Modal เฉพาะของวันนี้
             where: { user_id: userId, task_date: todayStr },
             include: [{ model: Task, as: 'task_detail' }],
             order: [['createdAt', 'DESC']]

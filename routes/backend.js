@@ -812,5 +812,7 @@ router.post("/employee/tasks/:id/submit", TaskController.submitTask);
 router.get("/admin/team-summary", TaskController.getTeamSummary);
 router.get("/admin/employee-tasks/:userId", TaskController.getEmployeeTaskDetails);
 
+// 🌟 เพิ่ม Route สำหรับการกดลา
+router.post("/employee/tasks/leave-today", TaskController.leaveTasksToday);
 
 module.exports = router;

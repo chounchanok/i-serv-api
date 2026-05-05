@@ -310,23 +310,25 @@ exports.getTeamSummary = async (req, res) => {
             filteredEmployees = employees.filter(emp => userAccountMap[emp.id] === accountName);
         }
 
-        // 🌟 4. สร้างข้อมูลสรุปส่งกลับไปที่ Frontend (แก้ไขเพิ่มรายการงาน)
+        // 🌟 4. สร้างข้อมูลสรุปส่งกลับไปที่ Frontend (แก้ไขให้นับคนลาด้วย)
         const summaries = filteredEmployees.map(emp => {
             const tasks = emp.assignments || [];
             
-            // 👈 แยกรายชื่องานที่ส่งแล้ว และยังไม่ส่ง (เอาเฉพาะชื่อมาต่อกันด้วยลูกน้ำ)
-            const submittedTasks = tasks
-                .filter(t => t.status === 'submitted')
-                .map(t => t.task_detail?.name || 'ไม่ระบุชื่อ')
-                .join(', '); // กลายเป็น String เช่น "เช็คสต๊อก, ถ่ายรูปหน้าร้าน"
-                
-            const pendingTasks = tasks
-                .filter(t => t.status !== 'submitted')
-                .map(t => t.task_detail?.name || 'ไม่ระบุชื่อ')
-                .join(', ');
+            // แยกงานตามสถานะ
+            const submittedTasks = tasks.filter(t => t.status === 'submitted');
+            const leavedTasks = tasks.filter(t => t.status === 'leaved');
+            
+            const isLeaved = leavedTasks.length > 0;
+            const leaveReason = isLeaved ? leavedTasks[0].reason : null; // ระวัง: ถ้าใน db คุณพิมพ์ reson ตรงนี้ต้องเปลี่ยนเป็น reson นะครับ
+
+            const submittedList = submittedTasks.map(t => t.task_detail?.name || 'ไม่ระบุชื่อ').join(', ');
+            
+            const pendingTasks = tasks.filter(t => t.status !== 'submitted' && t.status !== 'leaved');
+            const pendingList = pendingTasks.map(t => t.task_detail?.name || 'ไม่ระบุชื่อ').join(', ');
 
             const total = tasks.length;
-            const submitted = tasks.filter(t => t.status === 'submitted').length;
+            const submitted = submittedTasks.length;
+            const pending = pendingTasks.length; // คำนวณใหม่โดยหักคนที่ลาออกไป
             const pct = total > 0 ? Math.round((submitted / total) * 100) : 0;
             
             return {
@@ -335,9 +337,14 @@ exports.getTeamSummary = async (req, res) => {
                     name: `${emp.name} ${emp.last_name || ''}`.trim(),
                     store: userAccountMap[emp.id] || 'ไม่ระบุ' 
                 },
-                total, submitted, pending: total - submitted, pct,
-                submittedList: submittedTasks || '-', // 👈 ส่งข้อมูลกลับไป
-                pendingList: pendingTasks || '-'      // 👈 ส่งข้อมูลกลับไป
+                total, 
+                submitted, 
+                pending, 
+                pct,
+                isLeaved,          // 👈 ส่งค่าว่าลามั้ยกลับไปให้ Frontend
+                leaveReason,       // 👈 ส่งเหตุผลการลากลับไป
+                submittedList: submittedList || '-',
+                pendingList: pendingList || '-'
             };
         });
 
@@ -365,6 +372,45 @@ exports.getEmployeeTaskDetails = async (req, res) => {
         });
         res.status(200).send(assignments);
     } catch (err) {
+        res.status(500).send({ message: err.message });
+    }
+};
+
+exports.leaveTasksToday = async (req, res) => {
+    try {
+        const userId = req.body.userId;
+        const reason = req.body.reason; // holiday หรือ sick
+
+        if (!userId) return res.status(400).send({ message: "ไม่พบข้อมูล User ID" });
+        if (!reason) return res.status(400).send({ message: "กรุณาระบุเหตุผลการลา" });
+
+        // 🌟 ตั้งค่า Timezone ให้เป็นเวลาประเทศไทย (UTC+7) 🌟
+        const d = new Date();
+        const localDate = new Date(d.getTime() + (7 * 60 * 60 * 1000));
+        const todayStr = localDate.toISOString().split('T')[0];
+
+        // อัปเดตงานทั้งหมดของ user คนนี้ เฉพาะงานของวันนี้ และมีสถานะ pending
+        const result = await TaskAssignment.update(
+            { 
+                status: 'leaved', 
+                reason: reason // <-- ถ้า DB ชื่อ reson ให้แก้ตรงนี้เป็น reson: reason
+            }, 
+            { 
+                where: { 
+                    user_id: userId,
+                    task_date: todayStr,
+                    status: 'pending'
+                } 
+            }
+        );
+
+        if (result[0] > 0) {
+            res.status(200).send({ message: "บันทึกการลาเรียบร้อยแล้ว", updatedTasks: result[0] });
+        } else {
+            res.status(404).send({ message: "ไม่พบงานที่รอดำเนินการสำหรับวันนี้" });
+        }
+    } catch (err) {
+        console.error("LEAVE TASKS ERROR:", err);
         res.status(500).send({ message: err.message });
     }
 };

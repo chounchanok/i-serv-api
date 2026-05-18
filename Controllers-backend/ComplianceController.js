@@ -150,7 +150,7 @@ async function create_Compliance(req, res) {
                         model: Task,
                         as: 'task_detail',
                         where: {
-                            report_type: 'Price' // 🌟 เปลี่ยนชื่อให้ตรงกับเมนู (เช่น 'Offtake', 'Stock')
+                            report_type: 'Compliance' // 🌟 เปลี่ยนชื่อให้ตรงกับเมนู (เช่น 'Offtake', 'Stock')
                         }
                     }]
                 });

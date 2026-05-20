@@ -2,6 +2,7 @@ const db = require("../models");
 const Task = db.Task || db.tasks; 
 const TaskAssignment = db.TaskAssignment || db.task_assignments;
 const User = db.User; 
+const Position = db.Position;
 const { Op } = require("sequelize");
 
 // At the top of TaskController.js - add Account to your imports
@@ -258,18 +259,24 @@ exports.getTeamSummary = async (req, res) => {
         const localDate = new Date(d.getTime() + (7 * 60 * 60 * 1000));
         const todayStr = localDate.toISOString().split('T')[0];
 
-        // 🌟 1. ดึงข้อมูล User (เอา account_id ออกจาก attributes เพราะมันไม่มีในตารางนี้)
+        // 🌟 1. ดึงข้อมูล User (รวมถึงการกรองเฉพาะตำแหน่ง "พนักงาน")
         const employees = await User.findAll({
             where: userCondition,
-            attributes: ['id', 'name', 'last_name'], // 👈 ลบ account_id ออก
+            attributes: ['id', 'name', 'last_name'], 
             include: [
+                {
+                    model: Position, 
+                    as: 'position', // 👈 อ้างอิงตามชื่อ as: 'position' ใน User.js
+                    where: { name: 'พนักงาน' }, // 👈 กรองเฉพาะชื่อตำแหน่ง "พนักงาน" (อันนี้จะเป็นแบบ INNER JOIN อัตโนมัติ)
+                    attributes: ['name'] // (Optional) ดึงมาแค่ชื่อเพื่อลดขนาดข้อมูล
+                },
                 {
                     model: TaskAssignment,
                     as: 'assignments',
                     where: { task_date: todayStr },
                     required: false,
                     attributes: ['status'],
-                    include: [ // 👈 เพิ่ม Include ตรงนี้เพื่อดึงชื่องาน
+                    include: [ 
                         {
                             model: Task,
                             as: 'task_detail',
@@ -310,7 +317,7 @@ exports.getTeamSummary = async (req, res) => {
             filteredEmployees = employees.filter(emp => userAccountMap[emp.id] === accountName);
         }
 
-        // 🌟 4. สร้างข้อมูลสรุปส่งกลับไปที่ Frontend (แก้ไขให้นับคนลาด้วย)
+        // 🌟 4. สร้างข้อมูลสรุปส่งกลับไปที่ Frontend
         const summaries = filteredEmployees.map(emp => {
             const tasks = emp.assignments || [];
             
@@ -319,7 +326,7 @@ exports.getTeamSummary = async (req, res) => {
             const leavedTasks = tasks.filter(t => t.status === 'leaved');
             
             const isLeaved = leavedTasks.length > 0;
-            const leaveReason = isLeaved ? leavedTasks[0].reason : null; // ระวัง: ถ้าใน db คุณพิมพ์ reson ตรงนี้ต้องเปลี่ยนเป็น reson นะครับ
+            const leaveReason = isLeaved ? leavedTasks[0].reason : null; 
 
             const submittedList = submittedTasks.map(t => t.task_detail?.name || 'ไม่ระบุชื่อ').join(', ');
             
@@ -328,7 +335,7 @@ exports.getTeamSummary = async (req, res) => {
 
             const total = tasks.length;
             const submitted = submittedTasks.length;
-            const pending = pendingTasks.length; // คำนวณใหม่โดยหักคนที่ลาออกไป
+            const pending = pendingTasks.length; 
             const pct = total > 0 ? Math.round((submitted / total) * 100) : 0;
             
             return {
@@ -341,8 +348,8 @@ exports.getTeamSummary = async (req, res) => {
                 submitted, 
                 pending, 
                 pct,
-                isLeaved,          // 👈 ส่งค่าว่าลามั้ยกลับไปให้ Frontend
-                leaveReason,       // 👈 ส่งเหตุผลการลากลับไป
+                isLeaved,          
+                leaveReason,       
                 submittedList: submittedList || '-',
                 pendingList: pendingList || '-'
             };
@@ -384,6 +391,8 @@ exports.leaveTasksToday = async (req, res) => {
         if (!userId) return res.status(400).send({ message: "ไม่พบข้อมูล User ID" });
         if (!reason) return res.status(400).send({ message: "กรุณาระบุเหตุผลการลา" });
 
+        console.log(`LEAVE TASKS: User ${userId} is requesting leave for today with reason: ${reason}`);
+
         // 🌟 ตั้งค่า Timezone ให้เป็นเวลาประเทศไทย (UTC+7) 🌟
         const d = new Date();
         const localDate = new Date(d.getTime() + (7 * 60 * 60 * 1000));
@@ -399,18 +408,53 @@ exports.leaveTasksToday = async (req, res) => {
                 where: { 
                     user_id: userId,
                     task_date: todayStr,
-                    status: 'pending'
+                    status: ['pending', 'leaved'] // อัปเดตได้ทั้ง pending และ leaved (ถ้าเผลอกดลาไปแล้วจะได้แก้ไขเหตุผลได้)
                 } 
             }
         );
 
         if (result[0] > 0) {
-            res.status(200).send({ message: "บันทึกการลาเรียบร้อยแล้ว", updatedTasks: result[0] });
+            res.status(200).send({ message: "บันทึกการลาเรียบร้อยแล้ว", updatedTasks: result[0], reason: reason });
         } else {
             res.status(404).send({ message: "ไม่พบงานที่รอดำเนินการสำหรับวันนี้" });
         }
     } catch (err) {
         console.error("LEAVE TASKS ERROR:", err);
+        res.status(500).send({ message: err.message });
+    }
+};
+
+exports.cancelLeaveTasksToday = async (req, res) => {
+    try {
+        const userId = req.body.userId;
+        if (!userId) return res.status(400).send({ message: "ไม่พบข้อมูล User ID" });
+
+        const d = new Date();
+        const localDate = new Date(d.getTime() + (7 * 60 * 60 * 1000));
+        const todayStr = localDate.toISOString().split('T')[0];
+
+        // 🌟 ดึงงานที่สถานะเป็น leaved กลับมาเป็น pending และลบเหตุผลออก
+        const result = await TaskAssignment.update(
+            { 
+                status: 'pending', 
+                reason: null 
+            }, 
+            { 
+                where: { 
+                    user_id: userId,
+                    task_date: todayStr,
+                    status: 'leaved'
+                } 
+            }
+        );
+
+        if (result[0] > 0) {
+            res.status(200).send({ message: "ยกเลิกการลาเรียบร้อยแล้ว งานกลับมาเป็นรอดำเนินการ", updatedTasks: result[0] });
+        } else {
+            res.status(404).send({ message: "ไม่พบข้อมูลการลาสำหรับวันนี้" });
+        }
+    } catch (err) {
+        console.error("CANCEL LEAVE ERROR:", err);
         res.status(500).send({ message: err.message });
     }
 };

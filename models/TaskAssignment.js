@@ -6,6 +6,7 @@ module.exports = (sequelize, DataTypes) => {
     // 🌟 เพิ่มบรรทัดนี้ลงไป 🌟
     task_date: { type: DataTypes.DATEONLY, allowNull: false }, 
     status: { type: DataTypes.ENUM('pending', 'submitted'), defaultValue: 'pending' },
+    reason: { type: DataTypes.STRING },
     submitted_at: {
       type: DataTypes.DATE
     }

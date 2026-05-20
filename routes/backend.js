@@ -814,5 +814,7 @@ router.get("/admin/employee-tasks/:userId", TaskController.getEmployeeTaskDetail
 
 // 🌟 เพิ่ม Route สำหรับการกดลา
 router.post("/employee/tasks/leave-today", TaskController.leaveTasksToday);
+router.post("/employee/leave-tasks", TaskController.leaveTasksToday);
+router.post("/employee/cancel-leave", TaskController.cancelLeaveTasksToday);
 
 module.exports = router;

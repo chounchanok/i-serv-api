@@ -96,7 +96,7 @@ async function insert_ProductTocompliance(data) {
                 const [channel] = await db.Channel.findOrCreate({ where: { name: row['Channel'], group_customer_id: groupCustomer.id }, defaults: { name: row['Channel'], isActive: 'Y', group_customer_id: groupCustomer.id }, transaction });
                 const [placementPoint] = await db.PlacementPoint.findOrCreate({ where: { name: row['ตำแหน่งที่วาง'], group_customer_id: groupCustomer.id }, defaults: { name: row['ตำแหน่งที่วาง'], isActive: 'Y', group_customer_id: groupCustomer.id }, transaction });
                 const [rentalAreaUnit] = await db.RentalAreaUnit.findOrCreate({ where: { name: row['พื้นที่เช่า'], unit: row['หน่วย'], account_id: account.id }, defaults: { name: row['พื้นที่เช่า'], unit: row['หน่วย'], isActive: 'Y', group_customer_id: groupCustomer.id, account_id: account.id }, transaction });
-                const [product] = await db.Product.findOrCreate({ where: { name: row['สินค้า'], flavor: row['Product Flavor'] ?? null }, defaults: { name: row['สินค้า'], flavor: row['Product Flavor'] ?? null, group_customer_id: groupCustomer.id, isActive: 'Y' }, transaction });
+                const [product] = await db.Product.findOrCreate({ where: { name: row['สินค้า'], flavor: row['Product Flavor'] ?? null }, defaults: { name: row['สินค้า'], flavor: row['Product Flavor'] ?? null, group_customer_id: groupCustomer.id, isActive: 'Y' , price: 0, qty: row['จำนวน'] ?? 0 }, transaction });
                 
                 if (!groupCustomer || !account || !product) {
                     throw new Error("Failed to get critical related data (GroupCustomer, Account, or Product).");

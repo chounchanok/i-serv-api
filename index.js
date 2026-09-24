@@ -110,6 +110,8 @@ app.get('/view-images', (req, res) => {
     res.send(pageHtml);
 });
 
-app.listen(process.env.NODE_PORT || 3003, process.env.NODE_HOST || '0.0.0.0', () => {
-    console.log(`Server running at http://${process.env.NODE_HOST}:${process.env.NODE_PORT}/`);
+const PORT = Number(process.env.PORT || process.env.NODE_PORT || 3003);
+const HOST = process.env.NODE_HOST || '127.0.0.1'; 
+app.listen(PORT, HOST, () => {
+  console.log(`Server running at http://${HOST}:${PORT}/`);
 });

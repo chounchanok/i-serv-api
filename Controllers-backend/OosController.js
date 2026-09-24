@@ -9,6 +9,7 @@ const fs = require('fs');
 // 🌟 ดึง Model Task และ TaskAssignment มาใช้งานในไฟล์นี้ด้วย
 const Task = db.Task || db.tasks; 
 const TaskAssignment = db.TaskAssignment || db.task_assignments;
+const { findSubmittableAssignment } = require("../utilities/oneTimeTask"); // 🌟 รองรับงานแบบทำครั้งเดียว
 
 // function create Oos
 async function create_Oos(req, res) {
@@ -189,7 +190,7 @@ async function create_oos2(req, res) {
 
                     // วนลูปอัปเดตสถานะของ Task ที่ตรงกับชื่อ report_type
                     for (const reportType of req.body.reportTypesToSubmit) {
-                        const pendingAssignment = await TaskAssignment.findOne({
+                        const pendingAssignment = await findSubmittableAssignment({
                             where: {
                                 user_id: req.body.user_id,
                                 task_date: todayStr,

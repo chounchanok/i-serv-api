@@ -9,6 +9,7 @@ const path = require('path');
 // 🌟 ดึง Model Task และ TaskAssignment มาใช้งานในไฟล์นี้ด้วย
 const Task = db.Task || db.tasks; 
 const TaskAssignment = db.TaskAssignment || db.task_assignments;
+const { findSubmittableAssignment } = require("../utilities/oneTimeTask"); // 🌟 รองรับงานแบบทำครั้งเดียว
 
 // function create Compliance
 async function create_Compliancebk(req, res) {
@@ -140,7 +141,7 @@ async function create_Compliance(req, res) {
                 const todayStr = getTodayStr();
 
                 // 1. ค้นหาว่าพนักงานคนนี้ มีงาน OOS ของวันนี้ที่ยังไม่ได้ส่งหรือไม่
-                const pendingAssignment = await TaskAssignment.findOne({
+                const pendingAssignment = await findSubmittableAssignment({
                     where: {
                         user_id: req.body.user_id,
                         task_date: todayStr,
@@ -262,7 +263,7 @@ async function create_Compliance2(req, res) {
                 const todayStr = getTodayStr();
 
                 // 1. ค้นหาว่าพนักงานคนนี้ มีงาน OOS ของวันนี้ที่ยังไม่ได้ส่งหรือไม่
-                const pendingAssignment = await TaskAssignment.findOne({
+                const pendingAssignment = await findSubmittableAssignment({
                     where: {
                         user_id: req.body.user_id,
                         task_date: todayStr,

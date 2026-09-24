@@ -9,6 +9,7 @@ const path = require('path');
 // 🌟 ดึง Model Task และ TaskAssignment มาใช้งานในไฟล์นี้ด้วย
 const Task = db.Task || db.tasks; 
 const TaskAssignment = db.TaskAssignment || db.task_assignments;
+const { findSubmittableAssignment } = require("../utilities/oneTimeTask"); // 🌟 รองรับงานแบบทำครั้งเดียว
 
 // function create PricePromotion
 async function create_PricePromotion(req, res) {
@@ -226,7 +227,7 @@ async function create_PricePromotion2(req, res) {
                     // const Task = db.Task; const TaskAssignment = db.TaskAssignment;
                     
                     for (const reportType of typesToSubmit) {
-                        const pendingAssignment = await TaskAssignment.findOne({
+                        const pendingAssignment = await findSubmittableAssignment({
                             where: {
                                 // รับ userId จาก Body 
                                 user_id: req.body.user_id ? JSON.parse(req.body.user_id) : req.body.user_id,

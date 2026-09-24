@@ -9,6 +9,7 @@ const fs = require('fs');
 // 🌟 ดึง Model Task และ TaskAssignment มาใช้งานในไฟล์นี้ด้วย
 const Task = db.Task || db.tasks; 
 const TaskAssignment = db.TaskAssignment || db.task_assignments;
+const { findSubmittableAssignment } = require("../utilities/oneTimeTask"); // 🌟 รองรับงานแบบทำครั้งเดียว
 
 async function create_Week(req, res) {
     const error = validation(req);
@@ -167,7 +168,7 @@ async function create_Week2(req, res) {
                 const todayStr = getTodayStr();
 
                 // 1. ค้นหาว่าพนักงานคนนี้ มีงาน OOS ของวันนี้ที่ยังไม่ได้ส่งหรือไม่
-                const pendingAssignment = await TaskAssignment.findOne({
+                const pendingAssignment = await findSubmittableAssignment({
                     where: {
                         user_id: req.body.user_id,
                         task_date: todayStr,

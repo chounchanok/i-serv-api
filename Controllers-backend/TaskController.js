@@ -4,6 +4,7 @@ const TaskAssignment = db.TaskAssignment || db.task_assignments;
 const User = db.User; 
 const Position = db.Position;
 const { Op } = require("sequelize");
+const { isOneTime, applyOneTimeStatus } = require("../utilities/oneTimeTask"); // 🌟 งานแบบทำครั้งเดียว
 
 // At the top of TaskController.js - add Account to your imports
 
@@ -35,7 +36,8 @@ exports.createTask = async (req, res) => {
             end_date: req.body.endDate,
             description: req.body.description,
             target_brands: targetGroups, 
-            target_stores: targetAccounts 
+            target_stores: targetAccounts,
+            is_one_time: isOneTime(req.body.isOneTime) // 🌟 ทำครั้งเดียว
         });
 
         let userCondition = {};
@@ -95,14 +97,15 @@ exports.createTask = async (req, res) => {
 exports.updateTask = async (req, res) => {
     try {
         const taskId = req.params.id;
-        const { name, reportType, priority, startDate, endDate, description, targetGroups, targetAccounts } = req.body;
+        const { name, reportType, priority, startDate, endDate, description, targetGroups, targetAccounts, isOneTime: isOneTimeInput } = req.body;
         
         const task = await Task.findByPk(taskId);
         if (!task) return res.status(404).send({ message: "ไม่พบข้อมูลงานนี้ในระบบ" });
 
         await task.update({
             name, report_type: reportType, priority, start_date: startDate, end_date: endDate,
-            description, target_brands: targetGroups, target_stores: targetAccounts
+            description, target_brands: targetGroups, target_stores: targetAccounts,
+            is_one_time: isOneTime(isOneTimeInput) // 🌟 ทำครั้งเดียว
         });
 
         // ลบของเดิมที่ยังรอส่งทิ้งให้หมด
@@ -124,18 +127,27 @@ exports.updateTask = async (req, res) => {
 
         const employees = await User.findAll({ where: { ...userCondition, isActive: 'Y' } });
 
+        // 🌟 แถวที่ส่งแล้ว / ลาแล้ว ยังอยู่ (ไม่ได้ถูกลบ) -> ไม่ต้องสร้างซ้ำในวันเดียวกัน
+        const keptRows = await TaskAssignment.findAll({
+            where: { task_id: taskId },
+            attributes: ['user_id', 'task_date'],
+            raw: true
+        });
+        const keptKeys = new Set(keptRows.map(r => `${r.user_id}_${String(r.task_date).split('T')[0]}`));
+
         // 🌟 แจกจ่ายใหม่แบบวันต่อวัน
         if (employees.length > 0) {
             const dates = getDatesInRange(startDate, endDate);
             const assignments = [];
             employees.forEach(emp => {
                 dates.forEach(date => {
+                    if (keptKeys.has(`${emp.id}_${date}`)) return;
                     assignments.push({
                         task_id: task.id, user_id: emp.id, task_date: date, status: 'pending'
                     });
                 });
             });
-            await TaskAssignment.bulkCreate(assignments);
+            if (assignments.length > 0) await TaskAssignment.bulkCreate(assignments);
         }
 
         res.status(200).send({ message: "อัปเดตงานสำเร็จ", data: task });
@@ -205,8 +217,9 @@ exports.getEmployeeTasks = async (req, res) => {
             : 'ไม่ระบุ';
 
         // 4. แปลงข้อมูลและแนบ Account.name เข้าไปในทุกๆ งาน
-        const responseData = data.map(item => {
-            const taskObj = item.toJSON(); // แปลง Sequelize Object เป็น JSON ธรรมดาเพื่อเพิ่มคีย์ได้
+        // 🌟 งานแบบทำครั้งเดียว: ถ้าส่งไปแล้ว ให้วันที่เหลือแสดงเป็น "ส่งแล้ว" (ไม่แจ้งเตือนซ้ำ)
+        const withOneTime = await applyOneTimeStatus(data);
+        const responseData = withOneTime.map(taskObj => {
             taskObj.account_name = accountName; // 👈 แนบชื่อ Account กลับไปให้ Frontend
             return taskObj;
         });
@@ -275,12 +288,12 @@ exports.getTeamSummary = async (req, res) => {
                     as: 'assignments',
                     where: { task_date: todayStr },
                     required: false,
-                    attributes: ['status'],
+                    attributes: ['id', 'task_id', 'user_id', 'status', 'reason', 'submitted_at'],
                     include: [ 
                         {
                             model: Task,
                             as: 'task_detail',
-                            attributes: ['name']
+                            attributes: ['name', 'is_one_time']
                         }
                     ]
                 }
@@ -318,8 +331,17 @@ exports.getTeamSummary = async (req, res) => {
         }
 
         // 🌟 4. สร้างข้อมูลสรุปส่งกลับไปที่ Frontend
+        // 🌟 งานแบบทำครั้งเดียว: ถ้าพนักงานส่งไปแล้วในช่วงเวลางาน ให้นับเป็น "ส่งแล้ว" ทุกวันจนจบช่วง
+        const allAssignments = filteredEmployees.flatMap(emp => emp.assignments || []);
+        const adjusted = await applyOneTimeStatus(allAssignments);
+        const adjustedByUser = {};
+        adjusted.forEach(a => {
+            if (!adjustedByUser[a.user_id]) adjustedByUser[a.user_id] = [];
+            adjustedByUser[a.user_id].push(a);
+        });
+
         const summaries = filteredEmployees.map(emp => {
-            const tasks = emp.assignments || [];
+            const tasks = adjustedByUser[emp.id] || [];
             
             // แยกงานตามสถานะ
             const submittedTasks = tasks.filter(t => t.status === 'submitted');
@@ -377,7 +399,8 @@ exports.getEmployeeTaskDetails = async (req, res) => {
             include: [{ model: Task, as: 'task_detail' }],
             order: [['createdAt', 'DESC']]
         });
-        res.status(200).send(assignments);
+        // 🌟 งานแบบทำครั้งเดียว: แสดงสถานะส่งแล้วตลอดช่วงเวลาของงาน
+        res.status(200).send(await applyOneTimeStatus(assignments));
     } catch (err) {
         res.status(500).send({ message: err.message });
     }

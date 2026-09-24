@@ -1182,7 +1182,6 @@ async function excelcomplianceextra(req, res) {
             { header: 'หน่วย', key: 'rental_area_unit_unit', width: 10 },
             // { header: 'สินค้าทดแทน', key: 'substitute_products', width: 30 },
             { header: 'สื่อส่งเสริมการขาย', key: 'posm_products', width: 30 },
-            { header: 'ช่วงวันที่', key: 'daterange', width: 20 },
             { header: 'หมายเหตุ', key: 'note', width: 30 },
             { header: 'Week1', key: 'week1_images', width: 20 },
             { header: 'Week2', key: 'week2_images', width: 20 },
@@ -1291,7 +1290,6 @@ async function excelcomplianceextra(req, res) {
                     rental_area_unit_unit: row.rental_area_unit_unit || '',
                     // substitute_products: formatNamesFromIds(row.substitute_products_id, productIdToNameMap),
                     posm_products: formatNamesFromIds(row.posm_id, posmIdToNameMap),
-                    daterange: row.daterange,
                     note: row.note || '',
                 };
                 

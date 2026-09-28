@@ -810,6 +810,19 @@ router.get("/employee/my-tasks/:userId", TaskController.getEmployeeTasks);
 router.post("/employee/tasks/:id/submit", TaskController.submitTask);
 
 router.get("/admin/team-summary", TaskController.getTeamSummary);
+// 🌟 เช็คว่า API ที่รันอยู่เป็นโค้ดเวอร์ชันไหน (เปิดใน browser ได้เลย)
+router.get('/admin/tasks-version', (req, res) => {
+    const db = require('../models');
+    const T = db.Task || db.tasks;
+    res.send({
+        version: 'one-time-v1',
+        cwd: process.cwd(),
+        file: __filename,
+        pid: process.pid,
+        startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+        taskAttributes: T ? Object.keys(T.rawAttributes) : null
+    });
+});
 router.get("/admin/employee-tasks/:userId", TaskController.getEmployeeTaskDetails);
 
 // 🌟 เพิ่ม Route สำหรับการกดลา

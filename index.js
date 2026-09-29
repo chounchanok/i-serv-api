@@ -76,7 +76,7 @@ app.get('/view-images', (req, res) => {
     const filenames = filesQuery.split(',');
 
     // URL พื้นฐานที่เก็บรูปภาพ (ต้องตรงกับ imageBaseUrl ในโค้ดสร้าง Excel)
-    const imageBaseUrl = 'https://api-test.iservreport.com/';
+    const imageBaseUrl = 'https://api.iservreport.com/';
 
     // สร้าง HTML เพื่อแสดงรูปภาพทั้งหมด
     let imagesHtml = filenames.map(filename => {

@@ -948,7 +948,7 @@ async function excelcompliance(req, res) {
         const BATCH_SIZE = 1000;
         let offset = 0;
         let hasMoreData = true;
-        const imageBaseUrl = 'https://api-test.iservreport.com/view-images?files=';
+        const imageBaseUrl = 'https://api.iservreport.com/view-images?files=';
 
         while (hasMoreData) {
             // ✅ FIX 3: ลบ GROUP BY ที่ไม่มีประสิทธิภาพออก
@@ -1204,7 +1204,7 @@ async function excelcomplianceextra(req, res) {
         const BATCH_SIZE = 5000; // ดึงข้อมูลทีละ 1000 แถว (ปรับค่าได้)
         let offset = 0;
         let hasMoreData = true;
-        const imageBaseUrl = 'https://api-test.iservreport.com/view-images?files=';
+        const imageBaseUrl = 'https://api.iservreport.com/view-images?files=';
 
         // 5. เริ่ม Streaming Loop
         while (hasMoreData) {

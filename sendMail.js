@@ -4,15 +4,15 @@ const nodemailer = require('nodemailer');
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: 'iservreport@gmail.com', // ใส่ Gmail ของคุณ
-    pass: 'udytmueyfzncdtut' // ใส่รหัสผ่าน Gmail ของคุณ หรือใช้ App Password ถ้ามีการเปิดใช้งาน 2-Step Verification
+    user: 'koranatsoi17@gmail.com', // ใส่ Gmail ของคุณ
+    pass: 'soubrvddwaoddrtf' // ใส่รหัสผ่าน Gmail ของคุณ หรือใช้ App Password ถ้ามีการเปิดใช้งาน 2-Step Verification
   }
 });
 
 // สร้างตัวเลือกอีเมล (email options)
 const mailOptions = {
-  from: 'iservreport@gmail.com', // ใส่ Gmail ของคุณ
-  to: 'iservreport@gmail.com', // ใส่อีเมลผู้รับ
+  from: 'koranatsoi17@gmail.com', // ใส่ Gmail ของคุณ
+  to: 'koranatsoi17@gmail.com', // ใส่อีเมลผู้รับ
   subject: 'Testing Nodemailer', // หัวข้ออีเมล
   text: 'This is a test email sent using Nodemailer and Gmail!' // เนื้อหาอีเมล
 };

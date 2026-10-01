@@ -7,7 +7,7 @@ const router = express.Router();
 const validate = require('../utilities/validate');
 const { authenticateJWT } = require('../middleware/admin');
 const TaskController = require('../Controllers-backend/TaskController');
-
+const setTenant = require('../middleware/setTenant');
 
 // สร้าง Directory สำหรับเก็บไฟล์ชั่วคราว ถ้ายังไม่มี
 const uploadDir = './uploads/temp';
@@ -122,10 +122,12 @@ const FilterController = require('../Controllers-backend/FilterController');
 const DashboardController = require('../Controllers-backend/DashboardController');
 const DashboardOfftakeController = require('../Controllers-backend/DashboardOfftakeController');
 
+// 🌟 เพิ่มบรรทัดนี้ลงไปเพื่อให้ทุก Route ด้านล่างถูกสลับ Database อัตโนมัติ 🌟
+router.use(setTenant);
+
 router.get('/', (req, res) => {
     res.send('Hello World!');
 });
-
 
 // UserController
 router.post('/create_user', UserController.create_user);
@@ -147,14 +149,6 @@ router.delete('/delete_permission/:id', PermissionController.delete_permission);
 
 // check email
 router.post('/check_email', UserController.check_email);
-
-
-// UserController
-// router.get('/user_get_all', UserController.usergetall);
-// router.get('/user_all', authenticateJWT, UserController.findOne);
-
-// IndexController
-// router.get('/', IndexController.index);
 
 // Auth
 router.post('/auth/login', AdminController.login);
@@ -180,7 +174,6 @@ router.put('/update_user_group/:id', UserController.update_user_group);
 //delete usergroup
 router.delete('/delete_user_group/:id', UserController.delete_user_group);
 
-
 // Product 
 router.post('/create_product', ProductController.create_product);
 router.post('/get_all_product', ProductController.get_all_product);
@@ -203,7 +196,6 @@ router.get('/get_category/:id', CategoryController.get_category_by_id);
 router.put('/update_category/:id', CategoryController.update_category);
 router.put('/update_category_isActive/:id', CategoryController.update_category_isActive);
 
-
 //sup_category
 router.post('/create_sub_category', SubCategoryController.create_sub_category);
 router.post('/get_all_sub_category', SubCategoryController.get_all_sub_category);
@@ -212,8 +204,6 @@ router.put('/update_sub_category/:id', SubCategoryController.update_sub_category
 router.put('/update_subcategory_isActive/:id', SubCategoryController.is_active_sub_category);
 
 //import excel
-// router.post('/import_excel', upload.single('file'), ProductController.import_excel);
-
 router.post('/import_excel', ProductController.import_excel);
 router.post('/import_user', ImportuserController.import_user);
 router.post('/import_store', ImportstoreController.import_store);
@@ -234,19 +224,13 @@ router.post('/import_productTocompliance', ImportProductToComplianceController.i
 router.post('/import_user_store', ImportstoreController.import_user_store);
 
 router.post('/upload', (req, res) => {
-
     let file = req.files.image;
     var ext = file.name.split(".")[1];
-    // if(ext == 'jpg' || ext == 'jpeg' || ext == 'png'){
     var today = new Date();
     var date = today.getFullYear() + '-' + (today.getMonth() + 1) + '-' + today.getDate() + '' + today.getHours() + "" + today.getMinutes() + "" + today.getSeconds();
     var new_name = date + '.' + ext;
     file.mv('./uploads/excel/' + new_name);
-    // await sharp('./images/Banner/' + new_name)
-    // .resize(200, 200)
-    // .toFile('./images/Banner/200x200-' + new_name);
     res.status(200).send({ status: 'success' });
-
 });
 
 router.get('/export-excel', ExcelController.exportExcel);
@@ -259,30 +243,6 @@ router.get('/excelcomplianceextra/:id/:store_id/:user_id/:startDate_select/:endD
 
 router.get('/sendmail', MailController.sendmail);
 router.post('/send_forgot_email', MailController.send_forgot_email);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 // ส่วนของพี่ต้นทำ ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 router.post('/get_all_user', UserController.get_all_user);
@@ -680,9 +640,6 @@ router.post('/updateOnlyComplianceList', ComplianceListController.updateOnlyComp
 router.post('/complianceDetailsdeleteImage', ComplianceListController.complianceDetailsdeleteImage);
 router.post('/complianceDetailsdeleteImageExtra', ComplianceListController.complianceDetailsdeleteImageExtra);
 
-// router.post('/auth/me', authenticateJWT, AdminController.me);
-// router.post('/auth/logout', authenticateJWT, AdminController.logout);
-
 //MapStoreCompliance
 router.post('/create_MapStoreCompliance', MapStoreComplianceController.create_MapStoreCompliance);
 router.post('/MapStoreCompliance/data-table', authenticateJWT, MapStoreComplianceController.findAll);
@@ -702,21 +659,6 @@ router.post('/get_all_MapStoreComplianceList_filter', MapStoreComplianceListCont
 router.get('/get_MapStoreComplianceList/:id', MapStoreComplianceListController.get_MapStoreComplianceList_by_id);
 router.put('/update_MapStoreComplianceList/:id', MapStoreComplianceListController.update_MapStoreComplianceList);
 router.put('/update_MapStoreComplianceList_isActive/:id', MapStoreComplianceListController.update_MapStoreComplianceList_isActive);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 router.post('/get_all_filters_GroupCustomer', FilterController.get_all_filters_GroupCustomer);
 router.post('/get_all_filters', FilterController.get_all_filters);
@@ -757,49 +699,12 @@ router.post('/dashboard_offtake', DashboardController.dashboard_offtake);
 router.post('/changepassword', UserController.changepassword);
 router.post('/edituser', UserController.edituser);
 
-
 router.get('/test_update', UserController.test_update);
 
 router.post('/renew_product_oos', AdminController.renew_product_oos);
 router.post('/renew_product_offtake', AdminController.renew_product_offtake);
 router.post('/renew_product_price', AdminController.renew_product_price);
 router.post('/renew_product_week', AdminController.renew_product_week);
-
-
-// // AdminController
-// router.post('/admin', authenticateJWT, AdminController.create);
-// router.post('/admin/data-table', authenticateJWT, AdminController.findAll);
-// router.put('/admin/:id', validate('id'), authenticateJWT, AdminController.update);
-// router.get('/admin/:id', validate('id'), authenticateJWT, AdminController.findOne);
-// router.delete('/admin/:id', validate('id'), authenticateJWT, AdminController.delete);
-// router.post('/admin/:id/status', validate('id'), authenticateJWT, AdminController.status);
-
-// UserController
-// router.post('/user', authenticateJWT, UserController.create);
-// router.post('/user/data-table', authenticateJWT, UserController.findAll);
-// router.put('/user/:id', validate('id'), authenticateJWT, UserController.update);
-// router.get('/user/:id', validate('id'), authenticateJWT, UserController.findOne);
-// router.delete('/user/:id', validate('id'), authenticateJWT, UserController.delete);
-// router.post('/user/:id/status', validate('id'), authenticateJWT, UserController.status);
-
-// // BannerController
-// router.post('/banner', authenticateJWT, BannerController.create);
-// router.post('/banner/data-table', BannerController.findAll);
-// // router.post('/banner/data-table', authenticateJWT, BannerController.findAll);
-// router.put('/banner/:id', validate('id'), authenticateJWT, BannerController.update);
-// router.get('/banner/:id', validate('id'), BannerController.findOne);
-// router.get('/banner/:id', validate('id'), authenticateJWT, BannerController.findOne);
-
-// router.delete('/banner/:id', validate('id'), authenticateJWT, BannerController.delete);
-// router.post('/banner/:id/status', validate('id'), authenticateJWT, BannerController.status);
-
-// // CategoryController
-// router.post('/category', authenticateJWT, CategoryController.validate('form'), CategoryController.create);
-// router.post('/category/data-table', authenticateJWT, CategoryController.findAll);
-// router.put('/category/:id', validate('id'), CategoryController.validate('form'), authenticateJWT, CategoryController.update);
-// router.get('/category/:id', validate('id'), authenticateJWT, CategoryController.findOne);
-// router.delete('/category/:id', validate('id'), authenticateJWT, CategoryController.delete);
-// router.post('/category/:id/status', validate('id'), authenticateJWT, CategoryController.status);
 
 router.post('/admin/tasks', TaskController.createTask);
 router.get('/admin/tasks', TaskController.getAdminTasks);

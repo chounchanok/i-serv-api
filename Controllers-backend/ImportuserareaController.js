@@ -55,40 +55,55 @@ async function import_MapUserArea(req, res) {
 
 // ฟังก์ชันนี้ถูกเขียนขึ้นใหม่ทั้งหมดเพื่อให้ตรงตามเงื่อนไข
 async function insert_userarea(data) {
-    const dataToUpsert = []; // Array สำหรับเก็บข้อมูลที่ผ่านการตรวจสอบแล้ว เพื่อ Insert/Update
-    const validationErrors = []; // Array สำหรับเก็บข้อผิดพลาด
+    const dataToUpsert = []; 
+    const validationErrors = []; 
 
-    // --- Step 1: วน Loop เพื่อตรวจสอบข้อมูล (Validation) ทั้งไฟล์ก่อน ---
-    for (let i = 0; i < data.length; i++) {
-        const rowData = data[i];
+    // 🌟 Step 1: แปลงชื่อ Header ของ Excel ทุกคอลัมน์ให้เป็น "ตัวเล็ก" และ "ตัดช่องว่าง"
+    // ป้องกันปัญหาคนทำไฟล์ Excel พิมพ์เว้นวรรคเกิน หรือพิมพ์ตัวพิมพ์ใหญ่มา
+    const normalizedData = data.map(row => {
+        const cleanRow = {};
+        for (let key in row) {
+            if (row.hasOwnProperty(key)) {
+                cleanRow[key.trim().toLowerCase()] = row[key];
+            }
+        }
+        return cleanRow;
+    });
+
+    // --- Step 2: วน Loop เพื่อตรวจสอบข้อมูล ---
+    for (let i = 0; i < normalizedData.length; i++) {
+        const rowData = normalizedData[i];
         const currentRow = i + 2; // +2 เพื่อให้ตรงกับเลขแถวใน Excel
 
         let group_customer_id_new = null;
         let area_supervisor_id_new = null;
         let area_manager_id_new = null;
 
-        // --- ตรวจสอบ GroupCustomer (ถ้ามีในไฟล์) ---
+        // --- ตรวจสอบ GroupCustomer ---
+        // เช็คเผื่อกรณีชื่อคอลัมน์ใน Excel คือ group_customer_id
         if (rowData.group_customer_id) {
             const groupCustomer = await db.GroupCustomer.findOne({
                 where: { name: String(rowData.group_customer_id).trim() }
             });
             if (!groupCustomer) {
-                validationErrors.push(`Row ${currentRow}: GroupCustomer '${rowData.group_customer_id}' not found in the system.`);
-                continue; // ไปตรวจสอบแถวถัดไปทันที
+                validationErrors.push(`Row ${currentRow}: ไม่พบข้อมูล GroupCustomer '${rowData.group_customer_id}' ในฐานข้อมูล`);
+                continue; 
             }
             group_customer_id_new = groupCustomer.id;
         }
 
         // --- ตรวจสอบ AreaSupervisor (บังคับ) ---
         if (!rowData.area_supervisor_id) {
-             validationErrors.push(`Row ${currentRow}: 'area_supervisor_id' หาไม่พบในระบบ.`);
+             // ❗️ เปลี่ยนข้อความให้ชัดเจนว่า ปัญหาอยู่ที่ไฟล์ Excel
+             validationErrors.push(`Row ${currentRow}: คอลัมน์ 'area_supervisor_id' ในไฟล์ Excel ว่างเปล่า หรือสะกดชื่อคอลัมน์ผิด`);
              continue;
         }
         const areaSupervisor = await db.AreaSupervisor.findOne({
             where: { name: String(rowData.area_supervisor_id).trim() }
         });
         if (!areaSupervisor) {
-            validationErrors.push(`Row ${currentRow}: AreaSupervisor '${rowData.area_supervisor_id}' not found in the system.`);
+             // ❗️ เปลี่ยนข้อความให้ชัดเจนว่า ปัญหาอยู่ที่ Database
+            validationErrors.push(`Row ${currentRow}: ไม่พบรหัส AreaSupervisor '${rowData.area_supervisor_id}' ในฐานข้อมูลระบบ`);
             continue;
         }
         area_supervisor_id_new = areaSupervisor.id;
@@ -96,14 +111,14 @@ async function insert_userarea(data) {
 
         // --- ตรวจสอบ AreaManager (บังคับ) ---
         if (!rowData.area_manager_id) {
-             validationErrors.push(`Row ${currentRow}: 'area_manager_id' หาไม่พบในระบบ.`);
+             validationErrors.push(`Row ${currentRow}: คอลัมน์ 'area_manager_id' ในไฟล์ Excel ว่างเปล่า หรือสะกดชื่อคอลัมน์ผิด`);
              continue;
         }
         const areaManager = await db.AreaManager.findOne({
             where: { name: String(rowData.area_manager_id).trim() }
         });
         if (!areaManager) {
-            validationErrors.push(`Row ${currentRow}: AreaManager '${rowData.area_manager_id}' not found in the system.`);
+            validationErrors.push(`Row ${currentRow}: ไม่พบรหัส AreaManager '${rowData.area_manager_id}' ในฐานข้อมูลระบบ`);
             continue;
         }
         area_manager_id_new = areaManager.id;
@@ -115,31 +130,27 @@ async function insert_userarea(data) {
             area_supervisor_id: area_supervisor_id_new,
             area_manager_id: area_manager_id_new,
             isActive: 'Y',
-            // สามารถเพิ่ม field อื่นๆ ที่ต้องการ Insert/Update ที่นี่
         });
     }
 
-    // --- Step 2: ตรวจสอบว่ามี Error หรือไม่ ---
+    // --- Step 3: ตรวจสอบว่ามี Error หรือไม่ ---
     if (validationErrors.length > 0) {
-        // ถ้ามี Error แม้แต่รายการเดียว ให้โยน Error ออกไปพร้อมรายละเอียดทั้งหมด
         const error = new Error("Validation failed");
-        error.isValidationError = true; // สร้าง property เพื่อให้ catch ด้านนอกรู้ว่าเป็น Error ประเภทนี้
+        error.isValidationError = true; 
         error.details = validationErrors;
         throw error;
     }
 
-    // --- Step 3: ถ้าไม่มี Error เลย ให้ทำการบันทึกข้อมูล ---
+    // --- Step 4: ทำการบันทึกข้อมูล ---
     if (dataToUpsert.length > 0) {
-        // ใช้ bulkCreate กับ option `updateOnDuplicate` เพื่อทำ "Upsert"
-        // คำสั่งนี้จะ Insert ข้อมูลใหม่ และถ้าเจอข้อมูลซ้ำ (เช็คจาก Unique Key) ก็จะ Update แทน
         await db.MapUserArea.bulkCreate(dataToUpsert, {
-            updateOnDuplicate: ["isActive"], // <-- **สำคัญมาก** ระบุ Field ที่ต้องการให้อัปเดตถ้าข้อมูลซ้ำ
+            updateOnDuplicate: ["isActive"], 
         });
         console.log('Data upserted successfully');
         return dataToUpsert;
     }
 
-    return []; // กรณีไฟล์ว่าง
+    return []; 
 }
 
 // ฟังก์ชัน read_excel แนะนำให้ลบไฟล์หลังจากอ่านเสร็จทันที

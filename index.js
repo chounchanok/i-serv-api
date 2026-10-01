@@ -17,7 +17,16 @@ app.set('trust proxy', 1);
 app.disable('etag');
 app.disable('x-powered-by');
 
-app.use(cors());
+app.use(cors({
+    origin: [
+        'https://iservreport.com', // โดเมนหน้าบ้านจริงของคุณ
+        'https://test.iservreport.com', // โดเมนหน้าบ้านจริงของคุณ
+        'http://localhost:5173',   // เผื่อใช้รัน dev ในเครื่อง
+        'http://localhost:3000'
+    ],
+    credentials: true, // 🌟 อนุญาตให้ส่ง Cookie/Token ข้ามโดเมนได้
+}));
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 

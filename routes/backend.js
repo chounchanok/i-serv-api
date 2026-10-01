@@ -7,7 +7,6 @@ const router = express.Router();
 const validate = require('../utilities/validate');
 const { authenticateJWT } = require('../middleware/admin');
 const TaskController = require('../Controllers-backend/TaskController');
-const setTenant = require('../middleware/setTenant');
 
 // สร้าง Directory สำหรับเก็บไฟล์ชั่วคราว ถ้ายังไม่มี
 const uploadDir = './uploads/temp';
@@ -121,9 +120,6 @@ const MapUserAreaController = require('../Controllers-backend/MapUserAreaControl
 const FilterController = require('../Controllers-backend/FilterController');
 const DashboardController = require('../Controllers-backend/DashboardController');
 const DashboardOfftakeController = require('../Controllers-backend/DashboardOfftakeController');
-
-// 🌟 เพิ่มบรรทัดนี้ลงไปเพื่อให้ทุก Route ด้านล่างถูกสลับ Database อัตโนมัติ 🌟
-router.use(setTenant);
 
 router.get('/', (req, res) => {
     res.send('Hello World!');

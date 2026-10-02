@@ -134,15 +134,40 @@ async function insert_ProductToStore_Optimized(data) {
         const mapProductStores = await db.MapProductStore.findAll({ transaction: t });
         const mapProductStoreMap = new Map(mapProductStores.map(mps => [`${mps.name}_${mps.group_customer_id}_${mps.account_id}_${mps.account_type_id}`, mps]));
         // Product
-        await db.Product.bulkCreate(
-            uniqueProducts.map(p => ({
-                name: p.name,
-                flavor: p.flavor,
-                group_customer_id: groupCustomerMap.get(p.groupName)?.id,
-                isActive: 'Y'
-            })).filter(p => p.group_customer_id),
-            { ignoreDuplicates: true, transaction: t }
-        );
+        // 1. ดึงข้อมูล Product ทั้งหมดในระบบออกมาก่อน (เพื่อเอามาเทียบ)
+        const existingProducts = await db.Product.findAll({ transaction: t });
+
+        // 2. คัดกรองเฉพาะ Product ที่ "ยังไม่มี" ในระบบ
+        const newProductsToCreate = [];
+
+        uniqueProducts.forEach(p => {
+            const groupId = groupCustomerMap.get(p.groupName)?.id;
+            if (!groupId) return;
+
+            // เช็คว่ามีสินค้านี้ใน DB หรือยัง (เทียบชื่อ, รสชาติ, กลุ่ม)
+            const isDuplicate = existingProducts.find(ep => 
+                ep.name === p.name && 
+                ep.flavor === p.flavor && 
+                ep.group_customer_id === groupId
+            );
+
+            // ถ้ายังไม่มีใน DB ให้ push รอสร้างใหม่
+            if (!isDuplicate) {
+                newProductsToCreate.push({
+                    name: p.name,
+                    flavor: p.flavor,
+                    group_customer_id: groupId,
+                    isActive: 'Y'
+                });
+            }
+        });
+
+        // 3. ถ้ามีสินค้าใหม่จริงๆ ค่อยใช้ bulkCreate
+        if (newProductsToCreate.length > 0) {
+            await db.Product.bulkCreate(newProductsToCreate, { transaction: t });
+        }
+
+        // 4. ดึงข้อมูล Products ทั้งหมดไปใช้งานต่อ (จะรวมของเก่าที่มี ID และแบรนด์ครบถ้วนไว้ด้วย)
         const products = await db.Product.findAll({ transaction: t });
         const productMap = new Map(products.map(p => [`${p.name}_${p.flavor}_${p.group_customer_id}`, p]));
         

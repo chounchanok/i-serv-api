@@ -8,10 +8,11 @@ module.exports = {
       interpreter: '/opt/plesk/node/22/bin/node',
       exec_mode: 'cluster', 
       instances: '4', 
-      env_file: '.env.main', 
+      // 🌟 ลบ env_file บรรทัดนี้ทิ้งไปเลย
       env: {
         NODE_ENV: 'production',
-        NODE_PORT: 4000 // 🌟 บังคับพอร์ต 4000 ตรงนี้เลย (สิทธิ์ใหญ่สุด)
+        NODE_PORT: 4000,
+        ENV_FILE: '.env.main' // 🌟 เพิ่มบรรทัดนี้ ส่งชื่อไฟล์ให้ index.js แทน
       },
       out_file: '/var/www/vhosts/iservreport.com/api.iservreport.com/logs/main.out.log',
       error_file: '/var/www/vhosts/iservreport.com/api.iservreport.com/logs/main.error.log',
@@ -30,10 +31,11 @@ module.exports = {
       interpreter: '/opt/plesk/node/22/bin/node',
       exec_mode: 'cluster', 
       instances: '4', 
-      env_file: '.env.mj',
+      // 🌟 ลบ env_file บรรทัดนี้ทิ้งไปเลย
       env: {
         NODE_ENV: 'production',
-        NODE_PORT: 4001 // 🌟 บังคับพอร์ต 4001 ตรงนี้เลย (สิทธิ์ใหญ่สุด)
+        NODE_PORT: 4001,
+        ENV_FILE: '.env.mj' // 🌟 เพิ่มบรรทัดนี้ ส่งชื่อไฟล์ให้ index.js แทน
       },
       out_file: '/var/www/vhosts/iservreport.com/api.iservreport.com/logs/mj.out.log',
       error_file: '/var/www/vhosts/iservreport.com/api.iservreport.com/logs/mj.error.log',

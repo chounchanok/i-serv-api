@@ -74,9 +74,24 @@ async function insert_store(data) {
             accountTypeName = 'Default';
         }
 
+        // แก้ไขบล็อก account_type_id
+        let accountTypeName = data[i].account_type_id;
+        if (!accountTypeName || accountTypeName == 0) {
+            accountTypeName = 'Default';
+        }
+
         const [accountType] = await db.AccountType.findOrCreate({
-            where: { name: accountTypeName, group_customer_id: group_customer_id_new },
-            defaults: { account_id: account_id_new, name: accountTypeName, isActive: 'Y', group_customer_id: group_customer_id_new }
+            where: { 
+                name: accountTypeName, 
+                group_customer_id: group_customer_id_new,
+                account_id: account_id_new // <--- เพิ่มบรรทัดนี้ เพื่อให้มันแยก Type ตาม Account อย่างถูกต้อง
+            },
+            defaults: { 
+                account_id: account_id_new, 
+                name: accountTypeName, 
+                isActive: 'Y', 
+                group_customer_id: group_customer_id_new 
+            }
         });
         const account_type_id_new = accountType.id;
 

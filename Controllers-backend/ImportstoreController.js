@@ -68,12 +68,6 @@ async function insert_store(data) {
         });
         const account_id_new = account.id;
 
-        // ค้นหาหรือสร้าง account_type_id
-        let accountTypeName = data[i].account_type_id;
-        if (!accountTypeName || accountTypeName == 0) {
-            accountTypeName = 'Default';
-        }
-
         // แก้ไขบล็อก account_type_id
         let accountTypeName = data[i].account_type_id;
         if (!accountTypeName || accountTypeName == 0) {

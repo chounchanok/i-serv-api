@@ -725,7 +725,7 @@ async function excelprice(req, res) {
         const BATCH_SIZE = 15000; // ดึงข้อมูลทีละ 15000 แถว (ปรับค่านี้ได้ตามความเหมาะสม)
         let offset = 0;
         let hasMoreData = true;
-        const BASE_IMAGE_URL = 'https://test.iservreport.com/';
+        const BASE_IMAGE_URL = 'https://api.iservreport.com/';
 
         // 4. วน Loop ดึงข้อมูลจาก DB ทีละชุด (Pagination)
         while (hasMoreData) {
